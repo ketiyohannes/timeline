@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+event_name="${1:-}"
+[[ -n "$event_name" ]] || exit 0
+event_key="$(printf '%s' "$event_name" | tr '[:upper:]' '[:lower:]')"
+
+script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+recorder="$script_dir/codex-timeline"
+payload_file="$(mktemp "${TMPDIR:-/tmp}/codex-timeline-hook.XXXXXX")"
+trap 'rm -f "$payload_file"' EXIT
+cat > "$payload_file"
+
+json_value() {
+  local fields="$1"
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "$payload_file" "$fields" <<'PY'
+import json, sys
+try:
+    with open(sys.argv[1], encoding="utf-8") as handle:
+        data = json.load(handle)
+except Exception:
+    raise SystemExit(0)
+for key in sys.argv[2].split(","):
+    value = data.get(key)
+    if isinstance(value, (str, int)) and str(value):
+        print(value)
+        break
+PY
+  fi
+}
+
+repo="$(json_value 'cwd,workdir,working_directory,project_path')"
+session="$(json_value 'session_id,thread_id,conversation_id,task_id')"
+tool="$(json_value 'tool_name,tool')"
+turn="$(json_value 'turn_id')"
+tool_use="$(json_value 'tool_use_id')"
+repo="${repo:-$PWD}"
+session="${session:-default}"
+tool="${tool:-Codex tool}"
+
+if ! git -C "$repo" rev-parse --show-toplevel >/dev/null 2>&1; then
+  exit 0
+fi
+
+if [[ "${CODEX_TIMELINE_AUTO:-}" != "1" ]] && \
+   [[ "$(git -C "$repo" config --bool --get codex.timeline.enabled 2>/dev/null || true)" != "true" ]]; then
+  exit 0
+fi
+
+record() {
+  if ! "$recorder" "$@"; then
+    printf 'codex-timeline hook: recorder failed during %s\n' "$event_name" >&2
+  fi
+  return 0
+}
+
+case "$event_key" in
+  sessionstart|session-start|userpromptsubmit|user-prompt-submit)
+    record start --repo "$repo" --session "$session" --event "$event_name" --label baseline >/dev/null
+    record flush --repo "$repo" --session "$session" >/dev/null
+    ;;
+  pretooluse|pre-tool-use)
+    record start --repo "$repo" --session "$session" --event "$event_name" --label baseline >/dev/null
+    record flush --repo "$repo" --session "$session" >/dev/null
+    record pending-set --repo "$repo" --session "$session" --label "$tool" \
+      --event "$event_name" --tool "$tool" --turn "$turn" --tool-use "$tool_use"
+    ;;
+  posttooluse|post-tool-use)
+    record flush --repo "$repo" --session "$session" >/dev/null
+    ;;
+  stop|sessionend|session-end)
+    record flush --repo "$repo" --session "$session" >/dev/null
+    ;;
+esac

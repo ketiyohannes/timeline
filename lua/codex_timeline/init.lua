@@ -1,0 +1,153 @@
+local git = require("codex_timeline.git")
+local ui = require("codex_timeline.ui")
+
+local M = {}
+local namespace = vim.api.nvim_create_namespace("codex_timeline")
+local config = {
+  annotate_on_buf_enter = true,
+  virtual_text = false,
+  session = nil,
+}
+local selected_refs = {}
+
+local function root_for_current_buffer()
+  local name = vim.api.nvim_buf_get_name(0)
+  if name ~= "" and vim.bo.buftype == "" then
+    return git.root(vim.fn.fnamemodify(name, ":h"))
+  end
+  return git.root()
+end
+
+local function current_context()
+  local buffer = vim.api.nvim_get_current_buf()
+  local name = vim.api.nvim_buf_get_name(buffer)
+  if name == "" or vim.bo[buffer].buftype ~= "" then
+    return nil
+  end
+  local root = git.root(vim.fn.fnamemodify(name, ":h"))
+  if not root then
+    return nil
+  end
+  local ref = selected_refs[root] or (config.session and ("refs/codex-timeline/session-" .. config.session)) or git.latest_ref(root)
+  if not ref then
+    return nil
+  end
+  return buffer, name, root, ref
+end
+
+function M.clear(buffer)
+  vim.api.nvim_buf_clear_namespace(buffer or 0, namespace, 0, -1)
+end
+
+function M.annotate()
+  local buffer, name, root, ref = current_context()
+  if not buffer then
+    return
+  end
+  M.clear(buffer)
+
+  local events = git.events(root, ref)
+  if not events then
+    return
+  end
+  local sequence_by_hash = {}
+  for _, event in ipairs(events) do
+    sequence_by_hash[event.hash] = event.sequence
+  end
+
+  local relative = name:sub(#root + 2)
+  local blame = git.blame(root, ref, relative)
+  if not blame then
+    return
+  end
+
+  for line, hash in pairs(blame) do
+    local sequence = sequence_by_hash[hash]
+    if sequence and sequence > 0 and line <= vim.api.nvim_buf_line_count(buffer) then
+      local label = sequence < 100 and string.format("%02d", sequence) or "+"
+      local extmark = {
+        sign_text = label,
+        sign_hl_group = "CodexTimelineSign",
+        priority = 20,
+      }
+      if config.virtual_text then
+        extmark.virt_text = { { "  change #" .. sequence, "CodexTimelineVirtualText" } }
+        extmark.virt_text_pos = "eol"
+      end
+      vim.api.nvim_buf_set_extmark(buffer, namespace, line - 1, 0, extmark)
+    end
+  end
+end
+
+function M.jump(direction)
+  local buffer = vim.api.nvim_get_current_buf()
+  local cursor = vim.api.nvim_win_get_cursor(0)[1] - 1
+  local marks = vim.api.nvim_buf_get_extmarks(buffer, namespace, 0, -1, {})
+  if direction > 0 then
+    for _, mark in ipairs(marks) do
+      if mark[2] > cursor then
+        vim.api.nvim_win_set_cursor(0, { mark[2] + 1, 0 })
+        return
+      end
+    end
+  else
+    for index = #marks, 1, -1 do
+      if marks[index][2] < cursor then
+        vim.api.nvim_win_set_cursor(0, { marks[index][2] + 1, 0 })
+        return
+      end
+    end
+  end
+end
+
+function M.open()
+  local root = root_for_current_buffer()
+  if root and selected_refs[root] then
+    ui.open({ ref = selected_refs[root] })
+  else
+    ui.open({ session = config.session })
+  end
+end
+
+function M.select_session()
+  local root = root_for_current_buffer()
+  if not root then
+    vim.notify("Codex Timeline: current buffer is not in a Git repository", vim.log.levels.WARN)
+    return
+  end
+  ui.select_session(function(ref)
+    selected_refs[root] = ref
+    M.annotate()
+    ui.open({ ref = ref })
+  end)
+end
+
+function M.set_enabled(enabled)
+  local root = root_for_current_buffer()
+  if not root then
+    vim.notify("Codex Timeline: current directory is not in a Git repository", vim.log.levels.WARN)
+    return
+  end
+  local ok, err = git.set_enabled(root, enabled)
+  if not ok then
+    vim.notify("Codex Timeline: " .. (err or "unable to update Git config"), vim.log.levels.ERROR)
+    return
+  end
+  vim.notify("Codex Timeline recording " .. (enabled and "enabled" or "disabled") .. " for " .. root)
+end
+
+function M.setup(opts)
+  config = vim.tbl_deep_extend("force", config, opts or {})
+  vim.api.nvim_set_hl(0, "CodexTimelineSign", { default = true, link = "DiagnosticInfo" })
+  vim.api.nvim_set_hl(0, "CodexTimelineVirtualText", { default = true, link = "Comment" })
+
+  local group = vim.api.nvim_create_augroup("CodexTimeline", { clear = true })
+  if config.annotate_on_buf_enter then
+    vim.api.nvim_create_autocmd({ "BufEnter", "FocusGained", "FileChangedShellPost" }, {
+      group = group,
+      callback = function() vim.schedule(M.annotate) end,
+    })
+  end
+end
+
+return M

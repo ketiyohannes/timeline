@@ -1,0 +1,6 @@
+.DS_Store
+.nvimlog
+__pycache__/
+*.pyc
+*.swp
+*.swo

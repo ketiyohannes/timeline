@@ -1,0 +1,68 @@
+*codex-timeline.txt*           Chronological Codex changes for Neovim
+
+==============================================================================
+INTRODUCTION                                             *codex-timeline*
+
+Codex Timeline records the repository after each observed Codex tool call in
+an isolated Git ref, then presents those changes chronologically in Neovim.
+It never checks out a commit and never uses the repository's normal index.
+
+==============================================================================
+COMMANDS                                           *codex-timeline-commands*
+
+:CodexTimeline
+    Open the event list and patch preview. Press q to close, r to refresh, and
+    <CR> to open the first file touched by the selected event.
+
+:CodexTimelineAnnotate
+    Add signs to current lines. "01" means the line was introduced by event 1.
+
+:CodexTimelineClear
+    Remove signs from the current buffer.
+
+:CodexTimelineSession
+    Choose among recorded Codex sessions for the current repository.
+
+:CodexTimelineEnable / :CodexTimelineDisable
+    Opt the current repository into or out of automatic recording.
+
+]t / [t
+    Jump to the next or previous annotated line.
+
+==============================================================================
+SETUP                                                   *codex-timeline-setup*
+
+>lua
+    require("codex_timeline").setup({
+      annotate_on_buf_enter = true,
+      virtual_text = false,
+      session = nil,
+    })
+<
+
+Enable recording in a project:
+>
+    /path/to/codex-timeline/bin/codex-timeline enable --repo /path/to/project
+<
+
+Install the global Codex hook adapter:
+>
+    /path/to/codex-timeline/bin/install-codex-hook
+<
+
+Restart Codex after changing hooks.json.
+
+Run |:checkhealth codex_timeline| to verify Neovim, Git, repository opt-in,
+and recorded-session discovery.
+
+==============================================================================
+STORAGE                                                *codex-timeline-storage*
+
+Snapshots live under refs/codex-timeline/session-<session-id>. Metadata and
+pending state live below .git/codex-timeline/. These commits are not on the
+checked-out branch and are not pushed by normal `git push` commands.
+
+The ordering unit is a completed Codex tool call. It does not claim to recover
+keystroke order inside one patch or file write.
+
+vim:tw=78:ts=8:noet:ft=help:norl:
