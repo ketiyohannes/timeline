@@ -25,9 +25,9 @@ function M.check()
 
   vim.health.ok("Repository: " .. root)
   if git.enabled(root) then
-    vim.health.ok("Automatic recording is enabled for this repository")
+    vim.health.ok("Automatic recording is enabled (default for Git repositories)")
   else
-    vim.health.warn("Automatic recording is disabled; run :CodexTimelineEnable")
+    vim.health.warn("Automatic recording is explicitly disabled; run :CodexTimelineEnable to resume")
   end
 
   local ref = git.latest_ref(root)

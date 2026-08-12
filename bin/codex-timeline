@@ -14,9 +14,9 @@ Commands:
   pending-set     Remember the tool label for the next checkpoint
   flush           Checkpoint the pending tool, if any
   clear-pending   Forget the pending tool
-  enable          Enable automatic recording in this repository
-  disable         Disable automatic recording in this repository
-  status          Show whether automatic recording is enabled
+  enable          Enable/resume recording in this repository
+  disable         Disable recording in this repository
+  status          Show effective recording status (enabled by default)
   sessions        List recorded timeline refs, newest first
   latest          Print the most recently updated timeline ref
 
@@ -250,10 +250,10 @@ case "$command_name" in
     printf 'disabled\n'
     ;;
   status)
-    if [[ "$(git_at config --bool --get codex.timeline.enabled 2>/dev/null || true)" == "true" ]]; then
-      printf 'enabled\n'
-    else
+    if [[ "$(git_at config --bool --get codex.timeline.enabled 2>/dev/null || true)" == "false" ]]; then
       printf 'disabled\n'
+    else
+      printf 'enabled\n'
     fi
     ;;
   sessions)

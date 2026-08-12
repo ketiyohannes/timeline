@@ -24,7 +24,7 @@ COMMANDS                                           *codex-timeline-commands*
     Choose among recorded Codex sessions for the current repository.
 
 :CodexTimelineEnable / :CodexTimelineDisable
-    Opt the current repository into or out of automatic recording.
+    Resume or explicitly disable automatic recording for the current repository.
 
 ]t / [t
     Jump to the next or previous annotated line.
@@ -40,17 +40,14 @@ SETUP                                                   *codex-timeline-setup*
     })
 <
 
-Enable recording in a project:
->
-    /path/to/codex-timeline/bin/codex-timeline enable --repo /path/to/project
-<
-
 Install the global Codex hook adapter:
 >
     /path/to/codex-timeline/bin/install-codex-hook
 <
 
-Restart Codex after changing hooks.json.
+Restart Codex after changing hooks.json. Recording then starts automatically in
+every Git repository Codex works in. The first snapshot is the baseline; only
+changes made after it can have meaningful order.
 
 Run |:checkhealth codex_timeline| to verify Neovim, Git, repository opt-in,
 and recorded-session discovery.

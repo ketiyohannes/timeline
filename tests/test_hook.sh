@@ -11,8 +11,6 @@ git -C "$test_root" config user.email test@example.com
 printf 'before\n' > "$test_root/hooked.txt"
 git -C "$test_root" add hooked.txt
 git -C "$test_root" commit -qm baseline
-"$project_root/bin/codex-timeline" enable --repo "$test_root" >/dev/null
-
 printf '{"session_id":"thr_test","turn_id":"turn_1","tool_name":"apply_patch","tool_use_id":"call_1","cwd":"%s"}\n' "$test_root" |
   "$project_root/bin/codex-timeline-hook" PreToolUse
 printf 'before\nafter\n' > "$test_root/hooked.txt"
@@ -26,13 +24,24 @@ message="$(git -C "$test_root" log -1 --format=%B "$ref")"
 [[ "$message" == *"Codex-Timeline-Turn: turn_1"* ]]
 [[ "$message" == *"Codex-Timeline-Tool-Use: call_1"* ]]
 
+automatic_root="$test_root/automatic"
+mkdir "$automatic_root"
+git -C "$automatic_root" init -q
+printf '{"session_id":"automatic","cwd":"%s","hook_event_name":"SessionStart"}\n' "$automatic_root" |
+  "$project_root/bin/codex-timeline-hook" SessionStart
+git -C "$automatic_root" show-ref --verify --quiet refs/codex-timeline/session-automatic || {
+  printf 'hook did not automatically record an unconfigured repository\n' >&2
+  exit 1
+}
+
 disabled_root="$test_root/disabled"
 mkdir "$disabled_root"
 git -C "$disabled_root" init -q
+"$project_root/bin/codex-timeline" disable --repo "$disabled_root" >/dev/null
 printf '{"session_id":"disabled","cwd":"%s","hook_event_name":"SessionStart"}\n' "$disabled_root" |
   "$project_root/bin/codex-timeline-hook" SessionStart
 if git -C "$disabled_root" show-ref --quiet refs/codex-timeline/session-disabled; then
-  printf 'hook recorded a repository without opt-in\n' >&2
+  printf 'hook recorded an explicitly disabled repository\n' >&2
   exit 1
 fi
 

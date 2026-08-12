@@ -18,7 +18,7 @@ vim.api.nvim_create_user_command("CodexTimelineSession", timeline.select_session
   desc = "Select a recorded Codex timeline session",
 })
 vim.api.nvim_create_user_command("CodexTimelineEnable", function() timeline.set_enabled(true) end, {
-  desc = "Enable Codex timeline recording for this repository",
+  desc = "Enable or resume Codex timeline recording for this repository",
 })
 vim.api.nvim_create_user_command("CodexTimelineDisable", function() timeline.set_enabled(false) end, {
   desc = "Disable Codex timeline recording for this repository",

@@ -43,7 +43,7 @@ end
 
 function M.enabled(root)
   local output = run({ "git", "config", "--bool", "--get", "codex.timeline.enabled" }, root)
-  return output ~= nil and vim.trim(output) == "true"
+  return output == nil or vim.trim(output) ~= "false"
 end
 
 function M.set_enabled(root, enabled)

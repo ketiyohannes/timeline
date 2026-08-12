@@ -44,7 +44,7 @@ if ! git -C "$repo" rev-parse --show-toplevel >/dev/null 2>&1; then
 fi
 
 if [[ "${CODEX_TIMELINE_AUTO:-}" != "1" ]] && \
-   [[ "$(git -C "$repo" config --bool --get codex.timeline.enabled 2>/dev/null || true)" != "true" ]]; then
+   [[ "$(git -C "$repo" config --bool --get codex.timeline.enabled 2>/dev/null || true)" == "false" ]]; then
   exit 0
 fi
 

@@ -11,6 +11,10 @@ git -C "$test_root" config user.email test@example.com
 printf 'alpha\n' > "$test_root/example.txt"
 git -C "$test_root" add example.txt
 git -C "$test_root" commit -qm baseline
+[[ "$("$project_root/bin/codex-timeline" status --repo "$test_root")" == "enabled" ]] || {
+  printf 'unconfigured Git repository should be enabled by default\n' >&2
+  exit 1
+}
 
 head_before="$(git -C "$test_root" rev-parse HEAD)"
 index_before="$(git -C "$test_root" write-tree)"

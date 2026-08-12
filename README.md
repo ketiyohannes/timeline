@@ -51,13 +51,13 @@ Install the global hook adapter. The installer preserves unrelated handlers and 
 ./bin/install-codex-hook
 ```
 
-Restart Codex, then opt each repository into recording:
+Restart Codex. Recording starts automatically in every Git repository Codex works in—existing or new. On first contact, the current repository state becomes `base`; subsequent state-changing tool calls become `#001`, `#002`, and so on. Git cannot reconstruct the order of edits that happened before installation.
+
+To exclude a repository, run `:CodexTimelineDisable` in Neovim or:
 
 ```sh
-./bin/codex-timeline enable --repo /path/to/project
+./bin/codex-timeline disable --repo /path/to/project
 ```
-
-This opt-in prevents a global hook from silently recording every Git repository you open.
 
 ## Use
 
@@ -69,7 +69,7 @@ Open a tracked project in Neovim and run:
 | `:CodexTimelineAnnotate` | Refresh line annotations |
 | `:CodexTimelineSession` | Select a different recorded session |
 | `:CodexTimelineClear` | Remove annotations |
-| `:CodexTimelineEnable` / `:CodexTimelineDisable` | Toggle recording for this repository |
+| `:CodexTimelineEnable` / `:CodexTimelineDisable` | Resume or exclude this repository |
 | `]t` / `[t` | Jump to next/previous annotated line |
 
 Inside the timeline, use `j`/`k`, press `Enter` to open the first changed file, `r` to refresh, and `q` to close.
@@ -114,13 +114,14 @@ git update-ref -d refs/codex-timeline/session-SESSION_ID
 make test
 ```
 
-The suite verifies snapshot ordering, no-op deduplication, branch and index isolation, official hook payload handling, installer coexistence/idempotency, Neovim command loading, gutter annotations, and diff previews.
+The suite verifies automatic recording, explicit opt-out, snapshot ordering, no-op deduplication, branch and index isolation, official hook payload handling, installer coexistence/idempotency, Neovim command loading, gutter annotations, and diff previews.
 
 Run `:checkhealth codex_timeline` inside Neovim to diagnose Git availability, repository opt-in, and timeline discovery.
 
 ## Caveats
 
 - The snapshot covers all non-ignored worktree changes present when a checkpoint is taken. Git alone cannot prove whether Codex or another process made a concurrent edit.
+- History from before installation has no recoverable event ordering; it is represented by the initial baseline.
 - Ignored files are intentionally excluded.
 - Hooks are a useful observation boundary, not a security boundary; specialized Codex tool paths may opt out of normal tool hooks.
 
