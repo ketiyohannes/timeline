@@ -1,7 +1,15 @@
 local M = {}
 
 local function run(args, cwd)
-  local result = vim.system(args, { cwd = cwd, text = true }):wait()
+  local options = { text = true }
+  if cwd and cwd ~= "" then
+    options.cwd = cwd
+  end
+  local spawned, process_or_error = pcall(vim.system, args, options)
+  if not spawned then
+    return nil, tostring(process_or_error)
+  end
+  local result = process_or_error:wait()
   if result.code ~= 0 then
     return nil, vim.trim(result.stderr or "git command failed")
   end
@@ -11,7 +19,16 @@ end
 M.run = run
 
 function M.root(path)
-  local output = run({ "git", "rev-parse", "--show-toplevel" }, path or vim.fn.getcwd())
+  local candidate = path
+  local stat = candidate and vim.uv.fs_stat(candidate) or nil
+  if not stat or stat.type ~= "directory" then
+    candidate = vim.fn.getcwd()
+    stat = vim.uv.fs_stat(candidate)
+  end
+  if not stat or stat.type ~= "directory" then
+    return nil
+  end
+  local output = run({ "git", "rev-parse", "--show-toplevel" }, candidate)
   return output and vim.trim(output) or nil
 end
 

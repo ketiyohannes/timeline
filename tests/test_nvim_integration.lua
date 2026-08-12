@@ -26,4 +26,22 @@ end
 assert(diff_found, "timeline preview did not contain the expected patch")
 require("codex_timeline.ui").close()
 
+-- Commands invoked from virtual buffers (including :checkhealth output) must
+-- fall back to Neovim's cwd instead of using a health:// URI as a process cwd.
+vim.cmd.enew()
+vim.bo.buftype = "nofile"
+vim.api.nvim_buf_set_name(0, "health://codex_timeline")
+vim.cmd.lcd(vim.fn.fnameescape(test_repo))
+require("codex_timeline.ui").open({ session = "nvim" })
+local timeline_window_found = false
+for _, window in ipairs(vim.api.nvim_list_wins()) do
+  local buffer = vim.api.nvim_win_get_buf(window)
+  if vim.bo[buffer].filetype == "codex-timeline" then
+    timeline_window_found = true
+    break
+  end
+end
+assert(timeline_window_found, "timeline did not open from a virtual health buffer")
+require("codex_timeline.ui").close()
+
 print("neovim integration test passed")
