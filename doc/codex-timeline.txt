@@ -11,8 +11,13 @@ It never checks out a commit and never uses the repository's normal index.
 COMMANDS                                           *codex-timeline-commands*
 
 :CodexTimeline
-    Open the event list and patch preview. Press q to close, r to refresh, and
-    <CR> to open the first file touched by the selected event.
+    Open the snapshot browser. The changes pane shows only change number and
+    message; the codebase pane shows every file at that event; the source pane
+    shows the complete selected file with + and - highlights in place.
+
+    Press <CR> to move from changes to files and from files to source. Press
+    1, 2, or 3 to focus a pane; [c and ]c to traverse events from any pane;
+    q to close; and r in the changes pane to refresh.
 
 :CodexTimelineAnnotate
     Add signs to current lines. "01" means the line was introduced by event 1.

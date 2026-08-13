@@ -16,15 +16,15 @@ end
 timeline.open()
 local patch_found = false
 for _, buffer in ipairs(vim.api.nvim_list_bufs()) do
-  if vim.bo[buffer].filetype == "diff" then
+  if vim.b[buffer].codex_timeline_role == "source" then
     local contents = table.concat(vim.api.nvim_buf_get_lines(buffer, 0, -1, false), "\n")
-    if contents:find("+## Architecture", 1, true) then
+    if contents:find("## Architecture", 1, true) then
       patch_found = true
       break
     end
   end
 end
-assert(patch_found, "installed plugin did not render the live event patch")
+assert(patch_found, "installed plugin did not render the full live snapshot file")
 require("codex_timeline.ui").close()
 
 print("live installed Neovim test passed")

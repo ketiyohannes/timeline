@@ -117,6 +117,107 @@ function M.files(root, event)
   return vim.split(vim.trim(output), "\n", { plain = true, trimempty = true })
 end
 
+function M.tree(root, event)
+  local output, err = run({ "git", "ls-tree", "-r", "--name-only", event.hash }, root)
+  if not output then
+    return nil, err
+  end
+  return vim.split(vim.trim(output), "\n", { plain = true, trimempty = true })
+end
+
+function M.changes(root, event)
+  if event.parent == "" then
+    return {}
+  end
+  local output, err = run({
+    "git", "diff", "--name-status", "-M", event.parent, event.hash, "--",
+  }, root)
+  if not output then
+    return nil, err
+  end
+
+  local changes = {}
+  for line in output:gmatch("[^\n]+") do
+    local fields = vim.split(line, "\t", { plain = true })
+    local status = fields[1] or "M"
+    local kind = status:sub(1, 1)
+    if kind == "R" or kind == "C" then
+      local old_path, new_path = fields[2], fields[3]
+      if new_path then
+        changes[new_path] = { kind = kind, old_path = old_path, path = new_path }
+      end
+    elseif fields[2] then
+      changes[fields[2]] = { kind = kind, path = fields[2] }
+    end
+  end
+  return changes
+end
+
+function M.file_content(root, event, path)
+  local output, err = run({ "git", "show", event.hash .. ":" .. path }, root)
+  if not output then
+    return nil, err
+  end
+  return vim.split(output, "\n", { plain = true })
+end
+
+local function parse_full_diff(patch)
+  local lines, highlights = {}, {}
+  local inside_hunk = false
+  for line in patch:gmatch("([^\n]*)\n?") do
+    if line:sub(1, 2) == "@@" then
+      inside_hunk = true
+    elseif inside_hunk and line:sub(1, 1) == "+" then
+      lines[#lines + 1] = line:sub(2)
+      highlights[#highlights + 1] = { line = #lines, kind = "add" }
+    elseif inside_hunk and line:sub(1, 1) == "-" then
+      lines[#lines + 1] = line:sub(2)
+      highlights[#highlights + 1] = { line = #lines, kind = "delete" }
+    elseif inside_hunk and line:sub(1, 1) == " " then
+      lines[#lines + 1] = line:sub(2)
+    elseif inside_hunk and line == "\\ No newline at end of file" then
+      -- Git metadata is intentionally omitted from the source view.
+    end
+  end
+  return lines, highlights
+end
+
+function M.file_snapshot(root, event, path, change)
+  if not change or event.parent == "" then
+    local lines, err = M.file_content(root, event, path)
+    return lines, {}, err
+  end
+
+  local output, err = run({
+    "git", "diff", "--no-color", "--no-ext-diff", "--minimal", "--unified=999999",
+    event.parent, event.hash, "--", path,
+  }, root)
+  if not output then
+    return nil, nil, err
+  end
+  local lines, highlights = parse_full_diff(output)
+  if #lines > 0 or #highlights > 0 then
+    return lines, highlights
+  end
+
+  -- Binary files and rare diff formats have no textual hunk. Show the file at
+  -- the selected snapshot without inventing patch metadata.
+  if change.kind ~= "D" then
+    local content, content_err = M.file_content(root, event, path)
+    return content, {}, content_err
+  end
+  local deleted, deleted_err = run({ "git", "show", event.parent .. ":" .. path }, root)
+  if not deleted then
+    return nil, nil, deleted_err
+  end
+  local deleted_lines = vim.split(deleted, "\n", { plain = true })
+  local deleted_highlights = {}
+  for index = 1, #deleted_lines do
+    deleted_highlights[#deleted_highlights + 1] = { line = index, kind = "delete" }
+  end
+  return deleted_lines, deleted_highlights
+end
+
 function M.blame(root, ref, relative_path)
   local output, err = run({ "git", "blame", "--line-porcelain", ref, "--", relative_path }, root)
   if not output then

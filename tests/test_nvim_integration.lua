@@ -10,20 +10,76 @@ timeline.annotate()
 local namespace = vim.api.nvim_get_namespaces().codex_timeline
 local marks = vim.api.nvim_buf_get_extmarks(0, namespace, 0, -1, { details = true })
 assert(#marks == 1, "expected exactly one annotated line")
-assert(marks[1][2] == 1, "expected beta on the second line")
-assert(marks[1][4].sign_text == "01", "expected event #1 sign")
+assert(marks[1][2] == 1, "expected gamma on the second line")
+assert(marks[1][4].sign_text == "02", "expected event #2 sign")
 
 timeline.open()
-local diff_found = false
+local roles = {}
 for _, buffer in ipairs(vim.api.nvim_list_bufs()) do
-  if vim.bo[buffer].filetype == "diff" then
-    local text = table.concat(vim.api.nvim_buf_get_lines(buffer, 0, -1, false), "\n")
-    if text:find("+beta", 1, true) then
-      diff_found = true
-    end
+  local role = vim.b[buffer].codex_timeline_role
+  if role then
+    roles[role] = buffer
   end
 end
-assert(diff_found, "timeline preview did not contain the expected patch")
+assert(roles.changes and roles.files and roles.source, "snapshot browser panes were not created")
+
+local change_text = table.concat(vim.api.nvim_buf_get_lines(roles.changes, 0, -1, false), "\n")
+assert(change_text:find("#001%s+apply_patch"), "first change number and message were not shown")
+assert(change_text:find("#002%s+refactor"), "second change number and message were not shown")
+assert(not change_text:find("%d%d:%d%d:%d%d"), "timeline leaked timestamp metadata")
+assert(not change_text:find("[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]"), "timeline leaked commit hash metadata")
+
+local file_text = table.concat(vim.api.nvim_buf_get_lines(roles.files, 0, -1, false), "\n")
+assert(file_text:find("example.txt", 1, true), "changed file is missing from snapshot codebase")
+assert(file_text:find("added.txt", 1, true), "added file is missing from snapshot codebase")
+assert(file_text:find("unchanged.txt", 1, true), "deleted file is missing from event view")
+local changed_file_marks = vim.api.nvim_buf_get_extmarks(
+  roles.files,
+  vim.api.nvim_get_namespaces().codex_timeline_snapshot,
+  0,
+  -1,
+  { details = true }
+)
+assert(#changed_file_marks == 3, "all files touched by the event should be highlighted")
+
+local ui_state = require("codex_timeline.ui")._state
+local file_lines = vim.api.nvim_buf_get_lines(roles.files, 0, -1, false)
+local example_row
+for index, path in ipairs(file_lines) do
+  if path == "example.txt" then example_row = index end
+end
+assert(example_row, "example file is missing")
+vim.api.nvim_set_current_win(ui_state.windows.files)
+vim.api.nvim_win_set_cursor(ui_state.windows.files, { example_row, 0 })
+vim.cmd.doautocmd("CursorMoved")
+
+local source_lines = vim.api.nvim_buf_get_lines(roles.source, 0, -1, false)
+assert(
+  source_lines[1] == "alpha" and source_lines[2] == "beta" and source_lines[3] == "gamma",
+  "source pane did not interleave the complete file with its removed and added lines"
+)
+local source_text = table.concat(source_lines, "\n")
+assert(not source_text:find("diff %-%-git"), "source pane leaked diff metadata")
+assert(not source_text:find("@@", 1, true), "source pane leaked hunk metadata")
+
+local snapshot_namespace = vim.api.nvim_get_namespaces().codex_timeline_snapshot
+local source_marks = vim.api.nvim_buf_get_extmarks(roles.source, snapshot_namespace, 0, -1, { details = true })
+assert(#source_marks == 2, "expected one removed and one added line")
+assert(source_marks[1][2] == 1 and vim.trim(source_marks[1][4].sign_text) == "-", "expected - sign on removed beta")
+assert(source_marks[2][2] == 2 and vim.trim(source_marks[2][4].sign_text) == "+", "expected + sign on added gamma")
+
+-- Moving backward reconstructs the full earlier codebase and its event-local
+-- highlights rather than showing the latest worktree or a raw patch.
+vim.api.nvim_set_current_win(ui_state.windows.changes)
+vim.api.nvim_win_set_cursor(ui_state.windows.changes, { 2, 0 })
+vim.cmd.doautocmd("CursorMoved")
+local earlier_files = table.concat(vim.api.nvim_buf_get_lines(roles.files, 0, -1, false), "\n")
+assert(earlier_files:find("unchanged.txt", 1, true), "earlier snapshot lost an unchanged file")
+assert(not earlier_files:find("added.txt", 1, true), "earlier snapshot leaked a future file")
+local earlier_source = vim.api.nvim_buf_get_lines(roles.source, 0, -1, false)
+assert(earlier_source[1] == "alpha" and earlier_source[2] == "beta", "earlier source snapshot was not reconstructed")
+local earlier_marks = vim.api.nvim_buf_get_extmarks(roles.source, snapshot_namespace, 0, -1, { details = true })
+assert(#earlier_marks == 1 and vim.trim(earlier_marks[1][4].sign_text) == "+", "earlier addition highlight is wrong")
 require("codex_timeline.ui").close()
 
 -- Commands invoked from virtual buffers (including :checkhealth output) must
@@ -36,7 +92,7 @@ require("codex_timeline.ui").open({ session = "nvim" })
 local timeline_window_found = false
 for _, window in ipairs(vim.api.nvim_list_wins()) do
   local buffer = vim.api.nvim_win_get_buf(window)
-  if vim.bo[buffer].filetype == "codex-timeline" then
+  if vim.b[buffer].codex_timeline_role == "changes" then
     timeline_window_found = true
     break
   end

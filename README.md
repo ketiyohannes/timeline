@@ -2,12 +2,13 @@
 
 See Codex changes in Neovim in the order they happened.
 
-Codex Timeline captures the repository after each completed Codex tool call, stores the snapshots as commits on hidden Git refs, and renders that history as a timeline plus diff preview. Your branch, `HEAD`, and staging area are left alone.
+Codex Timeline captures the repository after each completed Codex tool call, stores the snapshots as commits on hidden Git refs, and renders that history as a browsable codebase at each point in time. Your branch, `HEAD`, and staging area are left alone.
 
 ## What it shows
 
 - A chronological event list with one entry per state-changing Codex tool call.
-- The exact patch introduced by each event.
+- The entire repository tree and complete source files as they existed at each event.
+- Added and removed lines interleaved in full-file context, highlighted with `+` and `-` gutter signs.
 - Two-character signs beside current lines: `01`, `02`, and so on identify the event that introduced each line.
 - Navigation between annotated lines with `]t` and `[t`.
 - Multiple Codex sessions per repository.
@@ -65,14 +66,19 @@ Open a tracked project in Neovim and run:
 
 | Command | Action |
 |---|---|
-| `:CodexTimeline` | Open the event list and diff preview |
+| `:CodexTimeline` | Browse the codebase snapshot for each ordered event |
 | `:CodexTimelineAnnotate` | Refresh line annotations |
 | `:CodexTimelineSession` | Select a different recorded session |
 | `:CodexTimelineClear` | Remove annotations |
 | `:CodexTimelineEnable` / `:CodexTimelineDisable` | Resume or exclude this repository |
 | `]t` / `[t` | Jump to next/previous annotated line |
 
-Inside the timeline, use `j`/`k`, press `Enter` to open the first changed file, `r` to refresh, and `q` to close.
+Inside the snapshot browser:
+
+- The left pane contains only the change number and commit message.
+- The middle pane contains every file in the codebase at that time; files touched by the selected event are highlighted.
+- The right pane contains the complete selected file. Added lines use `+` and `DiffAdd`; removed lines use `-` and `DiffDelete`.
+- Use `j`/`k` to traverse changes or files, `Enter` to move right, `1`/`2`/`3` to focus a pane, `[c`/`]c` to change events from any pane, `r` to refresh, and `q` to close.
 
 Optional configuration:
 
@@ -114,7 +120,7 @@ git update-ref -d refs/codex-timeline/session-SESSION_ID
 make test
 ```
 
-The suite verifies automatic recording, explicit opt-out, snapshot ordering, no-op deduplication, branch and index isolation, official hook payload handling, installer coexistence/idempotency, Neovim command loading, gutter annotations, and diff previews.
+The suite verifies automatic recording, explicit opt-out, snapshot ordering, no-op deduplication, branch and index isolation, official hook payload handling, installer coexistence/idempotency, full codebase snapshots, metadata-free source views, and added-line gutter highlighting.
 
 Run `:checkhealth codex_timeline` inside Neovim to diagnose Git availability, repository opt-in, and timeline discovery.
 

@@ -1,94 +1,207 @@
 local git = require("codex_timeline.git")
 
 local M = {}
-local state = { windows = {}, buffers = {}, events = {}, root = nil, ref = nil }
+local namespace = vim.api.nvim_create_namespace("codex_timeline_snapshot")
+local state = {
+  windows = {},
+  buffers = {},
+  events = {},
+  files = {},
+  changes = {},
+  root = nil,
+  ref = nil,
+  event = nil,
+}
 
 local function valid_window(window)
   return window and vim.api.nvim_win_is_valid(window)
 end
 
 local function close()
-  for _, window in pairs(state.windows) do
+  local windows = state.windows
+  state.windows = {}
+  state.buffers = {}
+  for _, window in pairs(windows) do
     if valid_window(window) then
       vim.api.nvim_win_close(window, true)
     end
   end
-  state.windows = {}
-  state.buffers = {}
 end
 
 local function dimensions()
-  local total_width = vim.o.columns
-  local total_height = vim.o.lines - vim.o.cmdheight
-  local width = math.max(72, math.floor(total_width * 0.88))
-  local height = math.max(12, math.floor(total_height * 0.72))
-  width = math.min(width, total_width - 4)
-  height = math.min(height, total_height - 4)
-  local list_width = math.max(28, math.floor(width * 0.34))
+  local columns = vim.o.columns
+  local rows = vim.o.lines - vim.o.cmdheight
+  local width = math.max(74, math.floor(columns * 0.96))
+  local height = math.max(14, math.floor(rows * 0.88))
+  width = math.min(width, columns - 2)
+  height = math.min(height, rows - 2)
+
+  local changes_width = math.max(24, math.floor(width * 0.23))
+  local files_width = math.max(25, math.floor(width * 0.25))
+  if changes_width + files_width > width - 30 then
+    changes_width = math.max(18, math.floor(width * 0.25))
+    files_width = math.max(20, math.floor(width * 0.28))
+  end
   return {
-    row = math.floor((total_height - height) / 2),
-    col = math.floor((total_width - width) / 2),
+    row = math.floor((rows - height) / 2),
+    col = math.floor((columns - width) / 2),
     width = width,
     height = height,
-    list_width = list_width,
-    diff_width = width - list_width - 2,
+    changes_width = changes_width,
+    files_width = files_width,
+    source_width = width - changes_width - files_width - 4,
   }
 end
 
 local function set_lines(buffer, lines)
   vim.bo[buffer].modifiable = true
-  vim.api.nvim_buf_set_lines(buffer, 0, -1, false, lines)
+  vim.api.nvim_buf_set_lines(buffer, 0, -1, false, #lines > 0 and lines or { "" })
   vim.bo[buffer].modifiable = false
 end
 
-local function preview()
-  if not valid_window(state.windows.list) or not state.buffers.diff then
-    return
+local function current_event()
+  if not valid_window(state.windows.changes) then
+    return nil
   end
-  local row = vim.api.nvim_win_get_cursor(state.windows.list)[1]
-  local event = state.events[row]
-  if not event then
-    return
-  end
-
-  local patch, err = git.diff(state.root, event)
-  local lines
-  if not patch then
-    lines = { "Unable to read event diff", "", err or "Unknown Git error" }
-  elseif patch == "" then
-    lines = { "Baseline snapshot", "", "No previous event exists to compare." }
-  else
-    lines = vim.split(patch, "\n", { plain = true })
-  end
-  set_lines(state.buffers.diff, lines)
-  vim.api.nvim_win_set_config(state.windows.diff, {
-    title = string.format(" Change #%03d · %s ", event.sequence, event.subject),
-    title_pos = "center",
-  })
+  return state.events[vim.api.nvim_win_get_cursor(state.windows.changes)[1]]
 end
 
-local function open_file()
-  local row = vim.api.nvim_win_get_cursor(state.windows.list)[1]
-  local event = state.events[row]
+local function current_file()
+  if not valid_window(state.windows.files) then
+    return nil
+  end
+  return state.files[vim.api.nvim_win_get_cursor(state.windows.files)[1]]
+end
+
+local function source_title(event)
+  local marker = event.sequence == 0 and "base" or string.format("#%03d", event.sequence)
+  return string.format(" %s · %s ", marker, event.subject)
+end
+
+local function render_source()
+  local event, path = state.event, current_file()
+  if not event or not path or not state.buffers.source then
+    return
+  end
+
+  local lines, highlights, err = git.file_snapshot(state.root, event, path, state.changes[path])
+  if not lines then
+    vim.notify("Codex Timeline: " .. (err or "unable to read snapshot file"), vim.log.levels.ERROR)
+    lines, highlights = { "" }, {}
+  end
+
+  local buffer = state.buffers.source
+  vim.api.nvim_buf_clear_namespace(buffer, namespace, 0, -1)
+  set_lines(buffer, lines)
+  vim.b[buffer].codex_timeline_path = path
+  vim.bo[buffer].filetype = vim.filetype.match({ filename = path }) or ""
+
+  for _, highlight in ipairs(highlights or {}) do
+    local added = highlight.kind == "add"
+    vim.api.nvim_buf_set_extmark(buffer, namespace, highlight.line - 1, 0, {
+      sign_text = added and "+" or "-",
+      sign_hl_group = added and "DiffAdd" or "DiffDelete",
+      line_hl_group = added and "DiffAdd" or "DiffDelete",
+      priority = 100,
+    })
+  end
+
+  if valid_window(state.windows.source) then
+    vim.api.nvim_win_set_config(state.windows.source, {
+      title = source_title(event),
+      title_pos = "center",
+    })
+    vim.api.nvim_win_set_cursor(state.windows.source, { 1, 0 })
+  end
+end
+
+local function file_highlight(change)
+  if not change then
+    return nil
+  end
+  if change.kind == "A" then
+    return "DiffAdd"
+  elseif change.kind == "D" then
+    return "DiffDelete"
+  end
+  return "DiffChange"
+end
+
+local function render_event()
+  local event = current_event()
   if not event then
     return
   end
-  local files = git.files(state.root, event)
-  if #files == 0 then
+  state.event = event
+
+  local files, tree_err = git.tree(state.root, event)
+  local changes, changes_err = git.changes(state.root, event)
+  if not files or not changes then
+    vim.notify("Codex Timeline: " .. (tree_err or changes_err or "unable to read snapshot"), vim.log.levels.ERROR)
     return
   end
-  local path = state.root .. "/" .. files[1]
-  if vim.fn.filereadable(path) ~= 1 then
-    vim.notify("Codex Timeline: file no longer exists: " .. files[1], vim.log.levels.INFO)
+
+  for path, change in pairs(changes) do
+    if change.kind == "D" then
+      files[#files + 1] = path
+    end
+  end
+  table.sort(files)
+  state.files, state.changes = files, changes
+
+  local file_buffer = state.buffers.files
+  vim.api.nvim_buf_clear_namespace(file_buffer, namespace, 0, -1)
+  set_lines(file_buffer, files)
+  for index, path in ipairs(files) do
+    local group = file_highlight(changes[path])
+    if group then
+      vim.api.nvim_buf_set_extmark(file_buffer, namespace, index - 1, 0, {
+        line_hl_group = group,
+        priority = 50,
+      })
+    end
+  end
+
+  local selected = 1
+  for index, path in ipairs(files) do
+    if changes[path] then
+      selected = index
+      break
+    end
+  end
+  if valid_window(state.windows.files) and #files > 0 then
+    vim.api.nvim_win_set_cursor(state.windows.files, { selected, 0 })
+  end
+  render_source()
+end
+
+local function focus(role)
+  if valid_window(state.windows[role]) then
+    vim.api.nvim_set_current_win(state.windows[role])
+  end
+end
+
+local function move_event(direction)
+  if not valid_window(state.windows.changes) then
     return
   end
-  close()
-  vim.cmd.edit(vim.fn.fnameescape(path))
+  local row = vim.api.nvim_win_get_cursor(state.windows.changes)[1]
+  row = math.max(1, math.min(#state.events, row + direction))
+  vim.api.nvim_win_set_cursor(state.windows.changes, { row, 0 })
+  render_event()
+end
+
+local function map_all(lhs, callback, description)
+  for _, buffer in pairs(state.buffers) do
+    vim.keymap.set("n", lhs, callback, { buffer = buffer, silent = true, nowait = true, desc = description })
+  end
 end
 
 function M.open(opts)
+  opts = opts or {}
   close()
-  local root = git.root(vim.api.nvim_buf_get_name(0) ~= "" and vim.fn.fnamemodify(vim.api.nvim_buf_get_name(0), ":h") or nil)
+  local buffer_name = vim.api.nvim_buf_get_name(0)
+  local root = git.root(buffer_name ~= "" and vim.fn.fnamemodify(buffer_name, ":h") or nil)
   if not root then
     vim.notify("Codex Timeline: current buffer is not in a Git repository", vim.log.levels.WARN)
     return
@@ -106,52 +219,75 @@ function M.open(opts)
 
   state.root, state.ref, state.events = root, ref, events
   local size = dimensions()
-  local list_buffer = vim.api.nvim_create_buf(false, true)
-  local diff_buffer = vim.api.nvim_create_buf(false, true)
-  state.buffers = { list = list_buffer, diff = diff_buffer }
-
-  state.windows.list = vim.api.nvim_open_win(list_buffer, true, {
-    relative = "editor", row = size.row, col = size.col,
-    width = size.list_width, height = size.height,
-    style = "minimal", border = "rounded", title = " Codex timeline ", title_pos = "center",
-  })
-  state.windows.diff = vim.api.nvim_open_win(diff_buffer, false, {
-    relative = "editor", row = size.row, col = size.col + size.list_width + 2,
-    width = size.diff_width, height = size.height,
-    style = "minimal", border = "rounded", title = " Change ", title_pos = "center",
-  })
-
-  local lines = {}
-  for _, item in ipairs(events) do
-    local marker = item.sequence == 0 and "base" or string.format("#%03d", item.sequence)
-    lines[#lines + 1] = string.format("%-4s  %s  %s", marker, item.time, item.subject)
+  for _, role in ipairs({ "changes", "files", "source" }) do
+    state.buffers[role] = vim.api.nvim_create_buf(false, true)
+    vim.b[state.buffers[role]].codex_timeline_role = role
   end
-  set_lines(list_buffer, lines)
-  vim.bo[list_buffer].filetype = "codex-timeline"
-  vim.bo[diff_buffer].filetype = "diff"
-  vim.wo[state.windows.list].cursorline = true
-  vim.wo[state.windows.list].wrap = false
-  vim.wo[state.windows.diff].wrap = false
 
-  local map_opts = { buffer = list_buffer, silent = true, nowait = true }
-  vim.keymap.set("n", "q", close, map_opts)
-  vim.keymap.set("n", "<Esc>", close, map_opts)
-  vim.keymap.set("n", "<CR>", open_file, map_opts)
+  state.windows.changes = vim.api.nvim_open_win(state.buffers.changes, true, {
+    relative = "editor", row = size.row, col = size.col,
+    width = size.changes_width, height = size.height,
+    style = "minimal", border = "rounded", title = " Changes ", title_pos = "center",
+  })
+  state.windows.files = vim.api.nvim_open_win(state.buffers.files, false, {
+    relative = "editor", row = size.row, col = size.col + size.changes_width + 2,
+    width = size.files_width, height = size.height,
+    style = "minimal", border = "rounded", title = " Codebase ", title_pos = "center",
+  })
+  state.windows.source = vim.api.nvim_open_win(state.buffers.source, false, {
+    relative = "editor", row = size.row, col = size.col + size.changes_width + size.files_width + 4,
+    width = size.source_width, height = size.height,
+    style = "minimal", border = "rounded", title = " Code ", title_pos = "center",
+  })
+
+  local event_lines = {}
+  for _, event in ipairs(events) do
+    local marker = event.sequence == 0 and "base" or string.format("#%03d", event.sequence)
+    event_lines[#event_lines + 1] = string.format("%-5s %s", marker, event.subject)
+  end
+  set_lines(state.buffers.changes, event_lines)
+  vim.bo[state.buffers.changes].filetype = "codex-timeline"
+  vim.bo[state.buffers.files].filetype = "codex-timeline-files"
+
+  for _, role in ipairs({ "changes", "files" }) do
+    vim.wo[state.windows[role]].cursorline = true
+    vim.wo[state.windows[role]].wrap = false
+    vim.wo[state.windows[role]].number = false
+    vim.wo[state.windows[role]].relativenumber = false
+    vim.wo[state.windows[role]].signcolumn = "no"
+  end
+  vim.wo[state.windows.source].wrap = false
+  vim.wo[state.windows.source].number = true
+  vim.wo[state.windows.source].relativenumber = false
+  vim.wo[state.windows.source].signcolumn = "yes:1"
+
+  vim.api.nvim_create_autocmd("CursorMoved", { buffer = state.buffers.changes, callback = render_event })
+  vim.api.nvim_create_autocmd("CursorMoved", { buffer = state.buffers.files, callback = render_source })
+  vim.api.nvim_create_autocmd("BufWipeout", { buffer = state.buffers.changes, once = true, callback = close })
+
+  map_all("q", close, "Close Codex timeline")
+  map_all("<Esc>", close, "Close Codex timeline")
+  map_all("[c", function() move_event(-1) end, "Previous recorded change")
+  map_all("]c", function() move_event(1) end, "Next recorded change")
+  map_all("1", function() focus("changes") end, "Focus recorded changes")
+  map_all("2", function() focus("files") end, "Focus snapshot codebase")
+  map_all("3", function() focus("source") end, "Focus snapshot source")
+  vim.keymap.set("n", "<CR>", function() focus("files") end, { buffer = state.buffers.changes, silent = true })
+  vim.keymap.set("n", "<CR>", function() focus("source") end, { buffer = state.buffers.files, silent = true })
   vim.keymap.set("n", "r", function()
     close()
     vim.schedule(function() M.open(opts) end)
-  end, map_opts)
-  vim.api.nvim_create_autocmd("CursorMoved", { buffer = list_buffer, callback = preview })
-  vim.api.nvim_create_autocmd("BufWipeout", { buffer = list_buffer, once = true, callback = close })
+  end, { buffer = state.buffers.changes, silent = true })
 
   if #events > 1 then
-    vim.api.nvim_win_set_cursor(state.windows.list, { #events, 0 })
+    vim.api.nvim_win_set_cursor(state.windows.changes, { #events, 0 })
   end
-  preview()
+  render_event()
 end
 
 function M.select_session(callback)
-  local root = git.root(vim.api.nvim_buf_get_name(0) ~= "" and vim.fn.fnamemodify(vim.api.nvim_buf_get_name(0), ":h") or nil)
+  local buffer_name = vim.api.nvim_buf_get_name(0)
+  local root = git.root(buffer_name ~= "" and vim.fn.fnamemodify(buffer_name, ":h") or nil)
   if not root then
     vim.notify("Codex Timeline: current buffer is not in a Git repository", vim.log.levels.WARN)
     return
@@ -168,8 +304,7 @@ function M.select_session(callback)
   vim.ui.select(refs, {
     prompt = "Codex timeline session",
     format_item = function(item)
-      local name = item.ref:gsub("^refs/codex%-timeline/session%-", "")
-      return string.format("%s  %s", item.time, name)
+      return item.ref:gsub("^refs/codex%-timeline/session%-", "")
     end,
   }, function(item)
     if item then
@@ -179,5 +314,6 @@ function M.select_session(callback)
 end
 
 M.close = close
+M._state = state
 
 return M
