@@ -77,7 +77,7 @@ end
 
 function M.events(root, ref)
   local output, err = run({
-    "git", "log", "--reverse", "--date=format:%H:%M:%S",
+    "git", "log", "--reverse", "--topo-order", "--date=format:%H:%M:%S",
     "--format=%H%x09%P%x09%ad%x09%s", ref,
   }, root)
   if not output then
@@ -85,16 +85,22 @@ function M.events(root, ref)
   end
 
   local events = {}
+  local zero_based = nil
   for line in output:gmatch("[^\n]+") do
     local hash, parents, time, subject = line:match("^([^\t]+)\t([^\t]*)\t([^\t]+)\t(.*)$")
     if hash then
-      local sequence = #events
+      local synthetic = subject:match("^codex%-timeline:") ~= nil
+      if zero_based == nil then
+        zero_based = synthetic
+      end
+      local sequence = zero_based and #events or (#events + 1)
       events[#events + 1] = {
         hash = hash,
         parent = parents:match("^[^ ]+") or "",
         time = time,
         subject = subject:gsub("^codex%-timeline:%s*", ""),
         sequence = sequence,
+        synthetic = synthetic,
       }
     end
   end
@@ -132,7 +138,18 @@ end
 
 function M.changes(root, event)
   if event.parent == "" then
-    return {}
+    if event.sequence == 0 then
+      return {}
+    end
+    local files, err = M.tree(root, event)
+    if not files then
+      return nil, err
+    end
+    local root_changes = {}
+    for _, path in ipairs(files) do
+      root_changes[path] = { kind = "A", path = path }
+    end
+    return root_changes
   end
   local output, err = run({
     "git", "diff", "--name-status", "-M", event.parent, event.hash, "--",
@@ -188,15 +205,24 @@ local function parse_full_diff(patch)
 end
 
 function M.file_snapshot(root, event, path, change)
-  if not change or event.parent == "" then
+  if not change or (event.parent == "" and event.sequence == 0) then
     local lines, err = M.file_content(root, event, path)
     return lines, {}, err
   end
 
-  local output, err = run({
-    "git", "diff", "--no-color", "--no-ext-diff", "--minimal", "--unified=999999",
-    event.parent, event.hash, "--", path,
-  }, root)
+  local args
+  if event.parent == "" then
+    args = {
+      "git", "show", "--format=", "--no-color", "--no-ext-diff", "--minimal", "--unified=999999",
+      event.hash, "--", path,
+    }
+  else
+    args = {
+      "git", "diff", "--no-color", "--no-ext-diff", "--minimal", "--unified=999999",
+      event.parent, event.hash, "--", path,
+    }
+  end
+  local output, err = run(args, root)
   if not output then
     return nil, nil, err
   end

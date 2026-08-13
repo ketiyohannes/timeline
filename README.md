@@ -6,7 +6,7 @@ Codex Timeline captures the repository after each completed Codex tool call, sto
 
 ## What it shows
 
-- A chronological event list with one entry per state-changing Codex tool call.
+- A chronological event list containing existing Git commits followed by state-changing Codex tool calls.
 - The entire repository tree and complete source files as they existed at each event.
 - Added and removed lines interleaved in full-file context, highlighted with `+` and `-` gutter signs.
 - Two-character signs beside current lines: `01`, `02`, and so on identify the event that introduced each line.
@@ -52,7 +52,9 @@ Install the global hook adapter. The installer preserves unrelated handlers and 
 ./bin/install-codex-hook
 ```
 
-Restart Codex. Recording starts automatically in every Git repository Codex works in—existing or new. Opening an existing repository in Neovim also synchronizes it immediately. At that moment, its complete committed, modified, and untracked state becomes `base`; subsequent state-changing Codex tool calls become `#001`, `#002`, and so on. Git cannot reconstruct the order of edits that happened before this baseline.
+Restart Codex. Recording starts automatically in every Git repository Codex works in—existing or new. Opening an existing repository in Neovim imports every commit reachable from its current `HEAD` into the Changes pane, preserving commit order, messages, full codebase snapshots, and highlighted diffs. The root commit is `#001`. If modified or untracked files exist at synchronization time, that complete local state becomes the next numbered `existing project baseline` entry. Subsequent state-changing Codex tool calls continue the same numbering.
+
+Timelines created by the previous single-baseline version are migrated automatically when they contain only that initial baseline. Git provides commit-level ordering for old history; it cannot reconstruct the order of individual edits inside an old commit.
 
 Automatic events from every future Codex task append to one continuous repository-local ref, `refs/codex-timeline/session-project`. The hidden commits retain the originating Codex session, turn, tool, and tool-use IDs, even though the Neovim interface intentionally displays only the change number, readable message, and code.
 
@@ -85,7 +87,7 @@ Open a tracked project in Neovim and run:
 | `:CodexTimelineSession` | Select a different recorded session |
 | `:CodexTimelineClear` | Remove annotations |
 | `:CodexTimelineEnable` / `:CodexTimelineDisable` | Resume or exclude this repository |
-| `:CodexTimelineSync` | Create the existing-project baseline now |
+| `:CodexTimelineSync` | Import existing commits and synchronize the current project state |
 | `]t` / `[t` | Jump to next/previous annotated line |
 
 Inside the snapshot browser:
@@ -138,14 +140,14 @@ git update-ref -d refs/codex-timeline/session-SESSION_ID
 make test
 ```
 
-The suite verifies existing-repository synchronization, continuous ordering across Codex tasks, stored Codex context, automatic recording, explicit opt-out, snapshot ordering, no-op deduplication, branch and index isolation, installer coexistence/idempotency, full codebase snapshots, metadata-free source views, and line highlighting.
+The suite verifies existing commit-history import, legacy-baseline migration, continuous ordering across Codex tasks, stored Codex context, automatic recording, explicit opt-out, snapshot ordering, no-op deduplication, branch and index isolation, installer coexistence/idempotency, full codebase snapshots, metadata-free source views, and line highlighting.
 
 Run `:checkhealth codex_timeline` inside Neovim to diagnose Git availability, repository opt-in, and timeline discovery.
 
 ## Caveats
 
 - The snapshot covers all non-ignored worktree changes present when a checkpoint is taken. Git alone cannot prove whether Codex or another process made a concurrent edit.
-- History from before installation has no recoverable event ordering; it is represented by the initial baseline.
+- Existing commits retain Git's commit-level ordering. Edit order inside a commit is not recoverable.
 - Ignored files are intentionally excluded.
 - Hooks are a useful observation boundary, not a security boundary; specialized Codex tool paths may opt out of normal tool hooks.
 

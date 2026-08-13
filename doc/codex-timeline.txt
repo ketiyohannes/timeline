@@ -32,8 +32,9 @@ COMMANDS                                           *codex-timeline-commands*
     Resume or explicitly disable automatic recording for the current repository.
 
 :CodexTimelineSync
-    Capture the current complete repository state as the baseline for the
-    continuous project timeline. This happens automatically on first file open.
+    Import the current HEAD's complete reachable commit history, then capture
+    modified and untracked state as the next entry. This happens automatically
+    on first file open.
 
 ]t / [t
     Jump to the next or previous annotated line.
@@ -55,8 +56,10 @@ Install the global Codex hook adapter:
 <
 
 Restart Codex after changing hooks.json. Recording then starts automatically in
-every Git repository Codex works in. The first snapshot is the baseline; only
-changes made after it can have meaningful order.
+every Git repository Codex works in. Existing Git commits appear first with
+their messages, full snapshots, and commit-level ordering. Modified and
+untracked files at synchronization become the next numbered entry. Git cannot
+recover edit order inside an old commit.
 
 All future Codex tasks append to refs/codex-timeline/session-project. Hidden
 commit trailers retain the originating session, turn, tool, and tool-use IDs;

@@ -11,6 +11,7 @@ local config = {
 }
 local selected_refs = {}
 local synced_roots = {}
+local syncing_roots = {}
 local project_ref = "refs/codex-timeline/session-project"
 local module_path = debug.getinfo(1, "S").source:sub(2)
 local plugin_root = vim.fn.fnamemodify(module_path, ":p:h:h:h")
@@ -29,12 +30,18 @@ local function sync_root(root, notify_user, callback)
     if callback then callback(false) end
     return
   end
-  if synced_roots[root] or git.has_ref(root, project_ref) then
-    synced_roots[root] = true
+  if synced_roots[root] then
     if notify_user then
       vim.notify("Codex Timeline is synchronized with this repository")
     end
     if callback then callback(true) end
+    return
+  end
+  if syncing_roots[root] then
+    syncing_roots[root].notify = syncing_roots[root].notify or notify_user
+    if callback then
+      table.insert(syncing_roots[root].callbacks, callback)
+    end
     return
   end
   if vim.fn.executable(recorder) ~= 1 then
@@ -45,22 +52,26 @@ local function sync_root(root, notify_user, callback)
     return
   end
 
+  syncing_roots[root] = { notify = notify_user, callbacks = callback and { callback } or {} }
   vim.system({
-    recorder, "start", "--repo", root, "--session", "project",
+    recorder, "sync", "--repo", root,
     "--label", "existing project baseline", "--event", "nvim-sync",
   }, { text = true }, function(result)
     vim.schedule(function()
+      local pending = syncing_roots[root] or { notify = notify_user, callbacks = {} }
+      syncing_roots[root] = nil
       if result.code == 0 then
         synced_roots[root] = true
-        if notify_user then
-          vim.notify("Codex Timeline baseline created; future Codex changes will stay synchronized")
+        if pending.notify then
+          vim.notify("Codex Timeline synchronized existing commits and future Codex changes")
         end
-        if callback then callback(true) end
       else
-        if notify_user then
+        if pending.notify then
           vim.notify("Codex Timeline sync failed: " .. vim.trim(result.stderr or "unknown error"), vim.log.levels.ERROR)
         end
-        if callback then callback(false) end
+      end
+      for _, queued_callback in ipairs(pending.callbacks) do
+        queued_callback(result.code == 0)
       end
     end)
   end)
@@ -153,7 +164,7 @@ end
 
 function M.open()
   local root = root_for_current_buffer()
-  if root and config.auto_sync and not selected_refs[root] and not config.session and not git.has_ref(root, project_ref) then
+  if root and config.auto_sync and not selected_refs[root] and not config.session and not synced_roots[root] then
     sync_root(root, true, function(ok)
       if ok then ui.open({ ref = project_ref }) end
     end)

@@ -31,8 +31,8 @@ printf '{"session_id":"thr_second","turn_id":"turn_2","tool_name":"apply_patch",
   "$project_root/bin/codex-timeline-hook" PostToolUse
 
 ref="refs/codex-timeline/session-project"
-[[ "$(git -C "$test_root" rev-list --count "$ref")" == 3 ]]
-baseline="$(git -C "$test_root" rev-list --reverse "$ref" | sed -n '1p')"
+[[ "$(git -C "$test_root" rev-list --count "$ref")" == 4 ]]
+baseline="$(git -C "$test_root" rev-list --reverse "$ref" | sed -n '2p')"
 [[ "$(git -C "$test_root" show "$baseline:hooked.txt")" == $'before\npre-existing local work' ]]
 [[ "$(git -C "$test_root" show "$baseline:untracked.txt")" == 'already here' ]]
 message="$(git -C "$test_root" log -1 --format=%B "$ref")"
@@ -40,7 +40,7 @@ message="$(git -C "$test_root" log -1 --format=%B "$ref")"
 [[ "$message" == *"Codex-Timeline-Session: thr_second"* ]]
 [[ "$message" == *"Codex-Timeline-Turn: turn_2"* ]]
 [[ "$message" == *"Codex-Timeline-Tool-Use: call_2"* ]]
-context_output="$("$project_root/bin/codex-timeline" context 2 --repo "$test_root" --session project)"
+context_output="$("$project_root/bin/codex-timeline" context 4 --repo "$test_root" --session project)"
 [[ "$context_output" == *"Codex-Timeline-Session: thr_second"* ]]
 [[ "$context_output" == *"Codex-Timeline-Ref: session-project"* ]]
 first_message="$(git -C "$test_root" log --reverse --format=%B "$ref" | sed -n '/codex-timeline: update hooked.txt/,+8p')"

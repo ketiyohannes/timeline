@@ -6,7 +6,7 @@ usage() {
 Usage: codex-timeline <command> [options]
 
 Commands:
-  sync            Create the continuous existing-project baseline
+  sync            Import existing commits and the current project state
   start           Create a baseline snapshot for a session
   checkpoint      Record the current worktree if it changed
   list            Print the session timeline as TSV
@@ -182,22 +182,60 @@ Codex-Timeline-Tool-Use: $(one_line "${tool_use_id:-unknown}")"
 }
 
 start_timeline() {
-  local tree commit
+  local tree commit head head_tree count existing first first_sequence
   if git_at show-ref --verify --quiet "$timeline_ref"; then
-    git_at rev-parse "$timeline_ref"
+    existing="$(git_at rev-parse "$timeline_ref")"
+    if [[ "$safe_session" == "session-project" && "$(git_at rev-list --count "$timeline_ref")" == "1" ]]; then
+      first="$(git_at rev-list --reverse "$timeline_ref" | sed -n '1p')"
+      first_sequence="$(git_at show -s --format=%B "$first" | sed -n 's/^Codex-Timeline-Sequence: //p' | tail -n 1)"
+      if [[ "$first_sequence" == "0" ]]; then
+        # Migrate timelines created by older plugin versions that represented
+        # an existing repository as one opaque baseline.
+        head="$(git_at rev-parse --verify HEAD 2>/dev/null || true)"
+        if [[ -n "$head" ]]; then
+          tree="$(snapshot_tree)"
+          head_tree="$(git_at show -s --format=%T "$head")"
+          if [[ "$tree" == "$head_tree" ]]; then
+            commit="$head"
+          else
+            count="$(git_at rev-list --count "$head")"
+            commit="$(make_commit "$tree" "$head" "${label:-existing project baseline}" "$((count + 1))")"
+          fi
+          git_at update-ref "$timeline_ref" "$commit" "$existing"
+          printf '%s\n' "$commit"
+          return
+        fi
+      fi
+    fi
+    printf '%s\n' "$existing"
     return
   fi
 
   tree="$(snapshot_tree)"
   event_name="${event_name:-session-start}"
-  commit="$(make_commit "$tree" "" "${label:-baseline}" 0)"
+
+  # Existing repositories already have a reliable commit-level ordering. Use
+  # that history as the beginning of the project timeline, then add a snapshot
+  # only when the worktree contains uncommitted or untracked state.
+  head="$(git_at rev-parse --verify HEAD 2>/dev/null || true)"
+  if [[ "$safe_session" == "session-project" && -n "$head" ]]; then
+    head_tree="$(git_at show -s --format=%T "$head")"
+    if [[ "$tree" == "$head_tree" ]]; then
+      commit="$head"
+    else
+      count="$(git_at rev-list --count "$head")"
+      commit="$(make_commit "$tree" "$head" "${label:-existing project baseline}" "$((count + 1))")"
+    fi
+  else
+    commit="$(make_commit "$tree" "" "${label:-baseline}" 0)"
+  fi
   git_at update-ref "$timeline_ref" "$commit"
   mkdir -p "$state_dir"
   printf '%s\n' "$commit"
 }
 
 checkpoint() {
-  local parent previous_tree tree count commit subject
+  local parent previous_tree tree count commit subject last_sequence
   if ! git_at show-ref --verify --quiet "$timeline_ref"; then
     start_timeline >/dev/null
     return
@@ -210,7 +248,14 @@ checkpoint() {
     return
   fi
 
-  count="$(git_at rev-list --count "$timeline_ref")"
+  last_sequence="$(git_at show -s --format=%B "$parent" | sed -n 's/^Codex-Timeline-Sequence: //p' | tail -n 1)"
+  if [[ "$last_sequence" =~ ^[0-9]+$ ]]; then
+    count="$((last_sequence + 1))"
+  else
+    # A project timeline seeded from ordinary Git history numbers the root
+    # commit as #1, so the first recorded snapshot follows the commit count.
+    count="$(( $(git_at rev-list --count "$timeline_ref") + 1 ))"
+  fi
   subject="${label:-change #$count}"
   commit="$(make_commit "$tree" "$parent" "$subject" "$count")"
   git_at update-ref "$timeline_ref" "$commit" "$parent"
@@ -218,9 +263,17 @@ checkpoint() {
 }
 
 resolve_sequence() {
-  local wanted="$1"
+  local wanted="$1" first first_sequence position
   [[ "$wanted" =~ ^[0-9]+$ ]] || die "sequence must be a non-negative integer"
-  git_at rev-list --reverse "$timeline_ref" | sed -n "$((wanted + 1))p"
+  first="$(git_at rev-list --reverse --topo-order "$timeline_ref" | sed -n '1p')"
+  first_sequence="$(git_at show -s --format=%B "$first" | sed -n 's/^Codex-Timeline-Sequence: //p' | tail -n 1)"
+  if [[ "$first_sequence" == "0" ]]; then
+    position="$((wanted + 1))"
+  else
+    position="$wanted"
+  fi
+  [[ "$position" -gt 0 ]] || return
+  git_at rev-list --reverse --topo-order "$timeline_ref" | sed -n "${position}p"
 }
 
 case "$command_name" in
@@ -303,13 +356,13 @@ case "$command_name" in
     ;;
   list)
     git_at show-ref --verify --quiet "$timeline_ref" || die "timeline does not exist: $session"
-    git_at log --reverse --date=iso-strict --format='%H%x09%P%x09%aI%x09%s' "$timeline_ref"
+    git_at log --reverse --topo-order --date=iso-strict --format='%H%x09%P%x09%aI%x09%s' "$timeline_ref"
     ;;
   diff)
     [[ -n "$sequence_arg" ]] || die "diff requires a sequence"
     commit="$(resolve_sequence "$sequence_arg")"
     [[ -n "$commit" ]] || die "unknown sequence: $sequence_arg"
-    parent="$(git_at rev-parse "$commit^" 2>/dev/null || true)"
+    parent="$(git_at rev-parse --verify "$commit^" 2>/dev/null || true)"
     if [[ -n "$parent" ]]; then
       git_at diff --no-ext-diff --minimal "$parent" "$commit" --
     else
@@ -320,7 +373,7 @@ case "$command_name" in
     [[ -n "$sequence_arg" ]] || die "files requires a sequence"
     commit="$(resolve_sequence "$sequence_arg")"
     [[ -n "$commit" ]] || die "unknown sequence: $sequence_arg"
-    parent="$(git_at rev-parse "$commit^" 2>/dev/null || true)"
+    parent="$(git_at rev-parse --verify "$commit^" 2>/dev/null || true)"
     if [[ -n "$parent" ]]; then
       git_at diff --name-only "$parent" "$commit" --
     else

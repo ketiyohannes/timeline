@@ -17,6 +17,11 @@ git -C "$test_root" commit -qm baseline
 }
 "$project_root/bin/codex-timeline" sync --repo "$test_root" >/dev/null
 git -C "$test_root" show-ref --verify --quiet refs/codex-timeline/session-project
+[[ "$(git -C "$test_root" rev-parse refs/codex-timeline/session-project)" == "$(git -C "$test_root" rev-parse HEAD)" ]] || {
+  printf 'clean existing history was not imported directly\n' >&2
+  exit 1
+}
+"$project_root/bin/codex-timeline" diff 1 --repo "$test_root" --session project | grep -q '^+alpha$'
 
 head_before="$(git -C "$test_root" rev-parse HEAD)"
 index_before="$(git -C "$test_root" write-tree)"
