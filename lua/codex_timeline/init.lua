@@ -1,5 +1,6 @@
 local git = require("codex_timeline.git")
 local ui = require("codex_timeline.ui")
+local highlights = require("codex_timeline.highlights")
 
 local M = {}
 local namespace = vim.api.nvim_create_namespace("codex_timeline")
@@ -8,6 +9,7 @@ local config = {
   auto_sync = true,
   virtual_text = false,
   session = nil,
+  colors = {},
 }
 local selected_refs = {}
 local synced_roots = {}
@@ -219,10 +221,13 @@ end
 
 function M.setup(opts)
   config = vim.tbl_deep_extend("force", config, opts or {})
-  vim.api.nvim_set_hl(0, "CodexTimelineSign", { default = true, link = "DiagnosticInfo" })
-  vim.api.nvim_set_hl(0, "CodexTimelineVirtualText", { default = true, link = "Comment" })
+  highlights.apply(config.colors)
 
   local group = vim.api.nvim_create_augroup("CodexTimeline", { clear = true })
+  vim.api.nvim_create_autocmd("ColorScheme", {
+    group = group,
+    callback = function() highlights.apply(config.colors) end,
+  })
   vim.api.nvim_create_autocmd({ "BufEnter", "FocusGained", "FileChangedShellPost" }, {
     group = group,
     callback = function()

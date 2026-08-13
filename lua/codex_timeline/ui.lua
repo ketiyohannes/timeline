@@ -100,8 +100,8 @@ local function render_source()
     local added = highlight.kind == "add"
     vim.api.nvim_buf_set_extmark(buffer, namespace, highlight.line - 1, 0, {
       sign_text = added and "+" or "-",
-      sign_hl_group = added and "DiffAdd" or "DiffDelete",
-      line_hl_group = added and "DiffAdd" or "DiffDelete",
+      sign_hl_group = added and "CodexTimelineAddSign" or "CodexTimelineDeleteSign",
+      line_hl_group = added and "CodexTimelineAddLine" or "CodexTimelineDeleteLine",
       priority = 100,
     })
   end
@@ -120,11 +120,11 @@ local function file_highlight(change)
     return nil
   end
   if change.kind == "A" then
-    return "DiffAdd"
+    return "CodexTimelineAddFile"
   elseif change.kind == "D" then
-    return "DiffDelete"
+    return "CodexTimelineDeleteFile"
   end
-  return "DiffChange"
+  return "CodexTimelineChangeFile"
 end
 
 local function render_event()
@@ -246,6 +246,16 @@ function M.open(opts)
     event_lines[#event_lines + 1] = string.format("%-5s %s", marker, event.subject)
   end
   set_lines(state.buffers.changes, event_lines)
+  for index, _ in ipairs(events) do
+    vim.api.nvim_buf_add_highlight(
+      state.buffers.changes,
+      namespace,
+      "CodexTimelineChangeNumber",
+      index - 1,
+      0,
+      4
+    )
+  end
   vim.bo[state.buffers.changes].filetype = "codex-timeline"
   vim.bo[state.buffers.files].filetype = "codex-timeline-files"
 
@@ -255,11 +265,20 @@ function M.open(opts)
     vim.wo[state.windows[role]].number = false
     vim.wo[state.windows[role]].relativenumber = false
     vim.wo[state.windows[role]].signcolumn = "no"
+    vim.wo[state.windows[role]].winhighlight = table.concat({
+      "CursorLine:CodexTimelineCursorLine",
+      "FloatBorder:CodexTimelineBorder",
+      "FloatTitle:CodexTimelineTitle",
+    }, ",")
   end
   vim.wo[state.windows.source].wrap = false
   vim.wo[state.windows.source].number = true
   vim.wo[state.windows.source].relativenumber = false
   vim.wo[state.windows.source].signcolumn = "yes:1"
+  vim.wo[state.windows.source].winhighlight = table.concat({
+    "FloatBorder:CodexTimelineBorder",
+    "FloatTitle:CodexTimelineTitle",
+  }, ",")
 
   vim.api.nvim_create_autocmd("CursorMoved", { buffer = state.buffers.changes, callback = render_event })
   vim.api.nvim_create_autocmd("CursorMoved", { buffer = state.buffers.files, callback = render_source })

@@ -41,6 +41,13 @@ local changed_file_marks = vim.api.nvim_buf_get_extmarks(
   { details = true }
 )
 assert(#changed_file_marks == 3, "all files touched by the event should be highlighted")
+local file_groups = {}
+for _, mark in ipairs(changed_file_marks) do
+  file_groups[mark[4].line_hl_group] = true
+end
+assert(file_groups.CodexTimelineAddFile, "added files should use the stronger add highlight")
+assert(file_groups.CodexTimelineDeleteFile, "deleted files should use the stronger delete highlight")
+assert(file_groups.CodexTimelineChangeFile, "modified files should use the stronger change highlight")
 
 local ui_state = require("codex_timeline.ui")._state
 local file_lines = vim.api.nvim_buf_get_lines(roles.files, 0, -1, false)
@@ -67,6 +74,10 @@ local source_marks = vim.api.nvim_buf_get_extmarks(roles.source, snapshot_namesp
 assert(#source_marks == 2, "expected one removed and one added line")
 assert(source_marks[1][2] == 1 and vim.trim(source_marks[1][4].sign_text) == "-", "expected - sign on removed beta")
 assert(source_marks[2][2] == 2 and vim.trim(source_marks[2][4].sign_text) == "+", "expected + sign on added gamma")
+assert(source_marks[1][4].line_hl_group == "CodexTimelineDeleteLine", "removed line highlight is not theme-aware")
+assert(source_marks[1][4].sign_hl_group == "CodexTimelineDeleteSign", "removed sign highlight is not bold")
+assert(source_marks[2][4].line_hl_group == "CodexTimelineAddLine", "added line highlight is not theme-aware")
+assert(source_marks[2][4].sign_hl_group == "CodexTimelineAddSign", "added sign highlight is not bold")
 
 -- Moving backward reconstructs the full earlier codebase and its event-local
 -- highlights rather than showing the latest worktree or a raw patch.

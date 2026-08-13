@@ -47,8 +47,13 @@ SETUP                                                   *codex-timeline-setup*
       annotate_on_buf_enter = true,
       virtual_text = false,
       session = nil,
+      colors = {},
     })
 <
+
+The timeline uses a bold green/red/amber palette that adapts to dark and light
+backgrounds and is restored after :colorscheme. Pass add_bg, add_fg, delete_bg,
+delete_fg, change_bg, change_fg, accent_bg, or accent_fg in `colors` to tune it.
 
 Install the global Codex hook adapter:
 >

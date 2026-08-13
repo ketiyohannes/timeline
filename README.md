@@ -94,7 +94,7 @@ Inside the snapshot browser:
 
 - The left pane contains only the change number and commit message.
 - The middle pane contains every file in the codebase at that time; files touched by the selected event are highlighted.
-- The right pane contains the complete selected file. Added lines use `+` and `DiffAdd`; removed lines use `-` and `DiffDelete`.
+- The right pane contains the complete selected file. Added lines use a bold green `+` treatment; removed lines use a bold red `-` treatment. Modified files use amber, and the palette adapts to dark or light backgrounds.
 - Use `j`/`k` to traverse changes or files, `Enter` to move right, `1`/`2`/`3` to focus a pane, `[c`/`]c` to change events from any pane, `r` to refresh, and `q` to close.
 
 Optional configuration:
@@ -105,8 +105,27 @@ require("codex_timeline").setup({
   auto_sync = true,
   virtual_text = false,
   session = nil,
+  colors = {},
 })
 ```
+
+The built-in palette can be tuned without replacing highlight groups:
+
+```lua
+require("codex_timeline").setup({
+  colors = {
+    add_bg = "#123D2A",
+    add_fg = "#8AFF80",
+    delete_bg = "#4A1F2A",
+    delete_fg = "#FF6B8A",
+    change_bg = "#44391F",
+    change_fg = "#FFD866",
+    accent_fg = "#8AADF4",
+  },
+})
+```
+
+Colors are reapplied after `:colorscheme`. Advanced configurations can override the `CodexTimeline*` highlight groups after setup.
 
 ## Recorder CLI
 
