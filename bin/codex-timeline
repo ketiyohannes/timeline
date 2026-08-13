@@ -6,11 +6,13 @@ usage() {
 Usage: codex-timeline <command> [options]
 
 Commands:
+  sync            Create the continuous existing-project baseline
   start           Create a baseline snapshot for a session
   checkpoint      Record the current worktree if it changed
   list            Print the session timeline as TSV
   diff <sequence> Print the patch introduced by one event
   files <sequence> Print files changed by one event
+  context <sequence> Print stored Codex context for one event
   pending-set     Remember the tool label for the next checkpoint
   flush           Checkpoint the pending tool, if any
   clear-pending   Forget the pending tool
@@ -23,6 +25,7 @@ Commands:
 Options:
   --repo <path>       Repository path (defaults to the current directory)
   --session <id>      Timeline session (defaults to "default")
+  --codex-session <id> Codex task/session context stored with the snapshot
   --label <text>      Human-readable event label
   --event <name>      Lifecycle event name
   --tool <name>       Codex tool name
@@ -42,6 +45,7 @@ shift
 
 repo_input="${CODEX_TIMELINE_REPO:-$PWD}"
 session="${CODEX_TIMELINE_SESSION:-default}"
+codex_session=""
 label=""
 event_name=""
 tool_name=""
@@ -53,6 +57,7 @@ while (($#)); do
   case "$1" in
     --repo) repo_input="${2:?missing value for --repo}"; shift 2 ;;
     --session) session="${2:?missing value for --session}"; shift 2 ;;
+    --codex-session) codex_session="${2:?missing value for --codex-session}"; shift 2 ;;
     --label) label="${2:?missing value for --label}"; shift 2 ;;
     --event) event_name="${2:?missing value for --event}"; shift 2 ;;
     --tool) tool_name="${2:?missing value for --tool}"; shift 2 ;;
@@ -68,6 +73,12 @@ while (($#)); do
   esac
 done
 
+if [[ "$command_name" == "sync" ]]; then
+  session="project"
+  label="${label:-existing project baseline}"
+  event_name="${event_name:-manual-sync}"
+fi
+
 repo_root="$(git -C "$repo_input" rev-parse --show-toplevel 2>/dev/null)" || die "not inside a Git repository: $repo_input"
 git_dir="$(git -C "$repo_root" rev-parse --absolute-git-dir)"
 
@@ -78,7 +89,12 @@ safe_session="${safe_session%-}"
 safe_session="session-${safe_session}"
 timeline_ref="refs/codex-timeline/$safe_session"
 state_dir="$git_dir/codex-timeline/$safe_session"
-pending_file="$state_dir/pending"
+pending_dir="$state_dir/pending"
+pending_key="$(printf '%s' "${tool_use_id:-default}" | LC_ALL=C tr -cs 'A-Za-z0-9._-' '-')"
+pending_key="${pending_key#-}"
+pending_key="${pending_key%-}"
+[[ -n "$pending_key" ]] || pending_key="default"
+pending_file="$pending_dir/$pending_key"
 lock_dir="$git_dir/codex-timeline/locks/$safe_session"
 lock_owned=false
 
@@ -139,7 +155,8 @@ make_commit() {
   subject="$(one_line "$subject")"
   message="codex-timeline: $subject
 
-Codex-Timeline-Session: $safe_session
+Codex-Timeline-Session: $(one_line "${codex_session:-$session}")
+Codex-Timeline-Ref: $safe_session
 Codex-Timeline-Sequence: $seq
 Codex-Timeline-Event: $(one_line "${event_name:-checkpoint}")
 Codex-Timeline-Tool: $(one_line "${tool_name:-unknown}")
@@ -207,6 +224,10 @@ resolve_sequence() {
 }
 
 case "$command_name" in
+  sync)
+    acquire_lock
+    start_timeline
+    ;;
   start)
     acquire_lock
     start_timeline
@@ -217,29 +238,50 @@ case "$command_name" in
     ;;
   pending-set)
     acquire_lock
-    mkdir -p "$state_dir"
-    printf '%s\n%s\n%s\n%s\n%s\n' \
+    mkdir -p "$pending_dir"
+    printf '%s\n%s\n%s\n%s\n%s\n%s\n' \
       "$(one_line "${label:-Codex tool}")" \
       "$(one_line "$event_name")" \
       "$(one_line "$tool_name")" \
       "$(one_line "$turn_id")" \
-      "$(one_line "$tool_use_id")" > "$pending_file"
+      "$(one_line "$tool_use_id")" \
+      "$(one_line "${codex_session:-$session}")" > "$pending_file"
     ;;
   flush)
     acquire_lock
-    if [[ -f "$pending_file" ]]; then
-      IFS= read -r label < "$pending_file" || true
-      event_name="$(sed -n '2p' "$pending_file")"
-      tool_name="$(sed -n '3p' "$pending_file")"
-      turn_id="$(sed -n '4p' "$pending_file")"
-      tool_use_id="$(sed -n '5p' "$pending_file")"
-      checkpoint
-      rm -f "$pending_file"
+    filter_codex_session="$codex_session"
+    pending_files=()
+    if [[ -n "$tool_use_id" ]]; then
+      pending_files=("$pending_file")
+    elif [[ -d "$pending_dir" ]]; then
+      while IFS= read -r file; do pending_files+=("$file"); done < <(find "$pending_dir" -maxdepth 1 -type f -print | sort)
     fi
+    for file in "${pending_files[@]}"; do
+      if [[ -f "$file" ]]; then
+        pending_codex_session="$(sed -n '6p' "$file")"
+        if [[ -n "$filter_codex_session" && "$pending_codex_session" != "$filter_codex_session" ]]; then
+          continue
+        fi
+        IFS= read -r label < "$file" || true
+        event_name="$(sed -n '2p' "$file")"
+        tool_name="$(sed -n '3p' "$file")"
+        turn_id="$(sed -n '4p' "$file")"
+        tool_use_id="$(sed -n '5p' "$file")"
+        codex_session="$(sed -n '6p' "$file")"
+        checkpoint
+        rm -f "$file"
+      fi
+    done
+    rmdir "$pending_dir" 2>/dev/null || true
     ;;
   clear-pending)
     acquire_lock
-    rm -f "$pending_file"
+    if [[ -n "$tool_use_id" ]]; then
+      rm -f "$pending_file"
+    elif [[ -d "$pending_dir" ]]; then
+      find "$pending_dir" -maxdepth 1 -type f -delete
+    fi
+    rmdir "$pending_dir" 2>/dev/null || true
     ;;
   enable)
     git_at config --local codex.timeline.enabled true
@@ -284,6 +326,12 @@ case "$command_name" in
     else
       git_at show --format= --name-only "$commit" --
     fi
+    ;;
+  context)
+    [[ -n "$sequence_arg" ]] || die "context requires a sequence"
+    commit="$(resolve_sequence "$sequence_arg")"
+    [[ -n "$commit" ]] || die "unknown sequence: $sequence_arg"
+    git_at show -s --format='%B' "$commit"
     ;;
   latest)
     git_at for-each-ref --sort=-committerdate --count=1 --format='%(refname)' refs/codex-timeline/

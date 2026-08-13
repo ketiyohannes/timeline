@@ -31,6 +31,11 @@ function M.check()
   end
 
   local ref = git.latest_ref(root)
+  if git.has_ref(root, "refs/codex-timeline/session-project") then
+    vim.health.ok("Existing repository is synchronized to the continuous project timeline")
+  else
+    vim.health.info("Project baseline is pending; run :CodexTimelineSync or reopen a project file")
+  end
   if ref then
     vim.health.ok("Latest recorded session: " .. ref:gsub("^refs/codex%-timeline/", ""))
   else

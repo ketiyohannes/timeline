@@ -23,6 +23,9 @@ vim.api.nvim_create_user_command("CodexTimelineEnable", function() timeline.set_
 vim.api.nvim_create_user_command("CodexTimelineDisable", function() timeline.set_enabled(false) end, {
   desc = "Disable Codex timeline recording for this repository",
 })
+vim.api.nvim_create_user_command("CodexTimelineSync", timeline.sync, {
+  desc = "Create the existing-project baseline and synchronize future Codex changes",
+})
 
 vim.keymap.set("n", "]t", function() timeline.jump(1) end, { desc = "Next Codex timeline change" })
 vim.keymap.set("n", "[t", function() timeline.jump(-1) end, { desc = "Previous Codex timeline change" })

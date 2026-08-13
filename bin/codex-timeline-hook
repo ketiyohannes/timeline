@@ -38,6 +38,49 @@ tool_use="$(json_value 'tool_use_id')"
 repo="${repo:-$PWD}"
 session="${session:-default}"
 tool="${tool:-Codex tool}"
+timeline_session="${CODEX_TIMELINE_REF:-project}"
+
+change_label="$(python3 - "$payload_file" "$tool" <<'PY'
+import json, re, sys
+
+tool = sys.argv[2]
+try:
+    with open(sys.argv[1], encoding="utf-8") as handle:
+        payload = json.load(handle)
+except Exception:
+    print(tool)
+    raise SystemExit
+
+tool_input = payload.get("tool_input")
+if not isinstance(tool_input, dict):
+    print(tool)
+    raise SystemExit
+
+command = tool_input.get("command")
+if not isinstance(command, str) or not command.strip():
+    print(tool)
+    raise SystemExit
+
+if tool == "apply_patch":
+    files = re.findall(r"^\*\*\* (?:Add|Update|Delete) File: (.+)$", command, re.MULTILINE)
+    if len(files) == 1:
+        action = "update"
+        if "*** Add File:" in command:
+            action = "add"
+        elif "*** Delete File:" in command:
+            action = "delete"
+        print(f"{action} {files[0]}")
+    elif files:
+        print(f"update {len(files)} files")
+    else:
+        print("apply patch")
+else:
+    first_line = next((line.strip() for line in command.splitlines() if line.strip()), tool)
+    first_line = re.sub(r"\s+", " ", first_line)
+    print(f"run {first_line[:120]}")
+PY
+)"
+change_label="${change_label:-$tool}"
 
 if ! git -C "$repo" rev-parse --show-toplevel >/dev/null 2>&1; then
   exit 0
@@ -57,19 +100,19 @@ record() {
 
 case "$event_key" in
   sessionstart|session-start|userpromptsubmit|user-prompt-submit)
-    record start --repo "$repo" --session "$session" --event "$event_name" --label baseline >/dev/null
-    record flush --repo "$repo" --session "$session" >/dev/null
+    record start --repo "$repo" --session "$timeline_session" --codex-session "$session" \
+      --event "$event_name" --label "existing project baseline" >/dev/null
     ;;
   pretooluse|pre-tool-use)
-    record start --repo "$repo" --session "$session" --event "$event_name" --label baseline >/dev/null
-    record flush --repo "$repo" --session "$session" >/dev/null
-    record pending-set --repo "$repo" --session "$session" --label "$tool" \
-      --event "$event_name" --tool "$tool" --turn "$turn" --tool-use "$tool_use"
+    record start --repo "$repo" --session "$timeline_session" --codex-session "$session" \
+      --event "$event_name" --label "existing project baseline" >/dev/null
+    record pending-set --repo "$repo" --session "$timeline_session" --label "$change_label" \
+      --event "$event_name" --tool "$tool" --turn "$turn" --tool-use "$tool_use" --codex-session "$session"
     ;;
   posttooluse|post-tool-use)
-    record flush --repo "$repo" --session "$session" >/dev/null
+    record flush --repo "$repo" --session "$timeline_session" --tool-use "$tool_use" >/dev/null
     ;;
   stop|sessionend|session-end)
-    record flush --repo "$repo" --session "$session" >/dev/null
+    record flush --repo "$repo" --session "$timeline_session" --codex-session "$session" >/dev/null
     ;;
 esac

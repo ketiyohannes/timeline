@@ -3,7 +3,7 @@ local test_repo = assert(vim.env.CODEX_TIMELINE_TEST_REPO)
 vim.opt.runtimepath:prepend(project_root)
 
 local timeline = require("codex_timeline")
-timeline.setup({ annotate_on_buf_enter = false, session = "nvim" })
+timeline.setup({ auto_sync = false, annotate_on_buf_enter = false, session = "nvim" })
 vim.cmd.edit(vim.fn.fnameescape(test_repo .. "/example.txt"))
 timeline.annotate()
 

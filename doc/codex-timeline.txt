@@ -31,6 +31,10 @@ COMMANDS                                           *codex-timeline-commands*
 :CodexTimelineEnable / :CodexTimelineDisable
     Resume or explicitly disable automatic recording for the current repository.
 
+:CodexTimelineSync
+    Capture the current complete repository state as the baseline for the
+    continuous project timeline. This happens automatically on first file open.
+
 ]t / [t
     Jump to the next or previous annotated line.
 
@@ -53,6 +57,10 @@ Install the global Codex hook adapter:
 Restart Codex after changing hooks.json. Recording then starts automatically in
 every Git repository Codex works in. The first snapshot is the baseline; only
 changes made after it can have meaningful order.
+
+All future Codex tasks append to refs/codex-timeline/session-project. Hidden
+commit trailers retain the originating session, turn, tool, and tool-use IDs;
+the snapshot browser intentionally keeps that metadata out of the code view.
 
 Run |:checkhealth codex_timeline| to verify Neovim, Git, repository opt-in,
 and recorded-session discovery.

@@ -11,14 +11,14 @@ Codex Timeline captures the repository after each completed Codex tool call, sto
 - Added and removed lines interleaved in full-file context, highlighted with `+` and `-` gutter signs.
 - Two-character signs beside current lines: `01`, `02`, and so on identify the event that introduced each line.
 - Navigation between annotated lines with `]t` and `[t`.
-- Multiple Codex sessions per repository.
+- One continuous project timeline across future Codex tasks, with legacy and explicitly named timelines still selectable.
 
 The event order is exact at the tool-call level. Codex applies patches or writes files atomically, so this cannot reconstruct fictional keystroke order inside a single tool call.
 
 ## Architecture
 
 ```text
-Codex lifecycle hook -> isolated Git snapshot -> refs/codex-timeline/session-*
+Codex lifecycle hook -> isolated Git snapshot -> refs/codex-timeline/session-project
                                                     |
 Neovim signs and timeline UI <----------------------+
 ```
@@ -52,7 +52,21 @@ Install the global hook adapter. The installer preserves unrelated handlers and 
 ./bin/install-codex-hook
 ```
 
-Restart Codex. Recording starts automatically in every Git repository Codex works in—existing or new. On first contact, the current repository state becomes `base`; subsequent state-changing tool calls become `#001`, `#002`, and so on. Git cannot reconstruct the order of edits that happened before installation.
+Restart Codex. Recording starts automatically in every Git repository Codex works in—existing or new. Opening an existing repository in Neovim also synchronizes it immediately. At that moment, its complete committed, modified, and untracked state becomes `base`; subsequent state-changing Codex tool calls become `#001`, `#002`, and so on. Git cannot reconstruct the order of edits that happened before this baseline.
+
+Automatic events from every future Codex task append to one continuous repository-local ref, `refs/codex-timeline/session-project`. The hidden commits retain the originating Codex session, turn, tool, and tool-use IDs, even though the Neovim interface intentionally displays only the change number, readable message, and code.
+
+To synchronize explicitly instead of waiting for file-open detection:
+
+```vim
+:CodexTimelineSync
+```
+
+or:
+
+```sh
+bin/codex-timeline sync --repo /path/to/existing/project
+```
 
 To exclude a repository, run `:CodexTimelineDisable` in Neovim or:
 
@@ -71,6 +85,7 @@ Open a tracked project in Neovim and run:
 | `:CodexTimelineSession` | Select a different recorded session |
 | `:CodexTimelineClear` | Remove annotations |
 | `:CodexTimelineEnable` / `:CodexTimelineDisable` | Resume or exclude this repository |
+| `:CodexTimelineSync` | Create the existing-project baseline now |
 | `]t` / `[t` | Jump to next/previous annotated line |
 
 Inside the snapshot browser:
@@ -85,6 +100,7 @@ Optional configuration:
 ```lua
 require("codex_timeline").setup({
   annotate_on_buf_enter = true,
+  auto_sync = true,
   virtual_text = false,
   session = nil,
 })
@@ -94,13 +110,15 @@ require("codex_timeline").setup({
 
 ```sh
 bin/codex-timeline status --repo .
+bin/codex-timeline sync --repo .
 bin/codex-timeline sessions --repo .
 bin/codex-timeline list --repo . --session SESSION_ID
 bin/codex-timeline diff 3 --repo . --session SESSION_ID
+bin/codex-timeline context 3 --repo . --session project
 bin/codex-timeline disable --repo .
 ```
 
-Timeline commits are stored at `refs/codex-timeline/session-<session-id>`. Temporary state lives inside `.git/codex-timeline/`. Normal commits, checkout, and staging remain untouched.
+The continuous automatic timeline is stored at `refs/codex-timeline/session-project`; explicitly named demonstration or legacy timelines use `refs/codex-timeline/session-<name>`. Temporary state lives inside `.git/codex-timeline/`. Normal commits, checkout, and staging remain untouched.
 
 To remove the global hooks while preserving other handlers:
 
@@ -120,7 +138,7 @@ git update-ref -d refs/codex-timeline/session-SESSION_ID
 make test
 ```
 
-The suite verifies automatic recording, explicit opt-out, snapshot ordering, no-op deduplication, branch and index isolation, official hook payload handling, installer coexistence/idempotency, full codebase snapshots, metadata-free source views, and added-line gutter highlighting.
+The suite verifies existing-repository synchronization, continuous ordering across Codex tasks, stored Codex context, automatic recording, explicit opt-out, snapshot ordering, no-op deduplication, branch and index isolation, installer coexistence/idempotency, full codebase snapshots, metadata-free source views, and line highlighting.
 
 Run `:checkhealth codex_timeline` inside Neovim to diagnose Git availability, repository opt-in, and timeline discovery.
 

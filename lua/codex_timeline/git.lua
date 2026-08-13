@@ -41,6 +41,11 @@ function M.latest_ref(root)
   return ref ~= "" and ref or nil
 end
 
+function M.has_ref(root, ref)
+  local output = run({ "git", "show-ref", "--verify", "--quiet", ref }, root)
+  return output ~= nil
+end
+
 function M.enabled(root)
   local output = run({ "git", "config", "--bool", "--get", "codex.timeline.enabled" }, root)
   return output == nil or vim.trim(output) ~= "false"

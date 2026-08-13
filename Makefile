@@ -14,3 +14,4 @@ test-installer:
 test-nvim:
 	CODEX_TIMELINE_PROJECT="$(CURDIR)" nvim --headless -u NONE -l tests/test_nvim.lua
 	./tests/test_nvim_integration.sh
+	./tests/test_existing_repo_sync.sh

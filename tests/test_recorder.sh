@@ -15,6 +15,8 @@ git -C "$test_root" commit -qm baseline
   printf 'unconfigured Git repository should be enabled by default\n' >&2
   exit 1
 }
+"$project_root/bin/codex-timeline" sync --repo "$test_root" >/dev/null
+git -C "$test_root" show-ref --verify --quiet refs/codex-timeline/session-project
 
 head_before="$(git -C "$test_root" rev-parse HEAD)"
 index_before="$(git -C "$test_root" write-tree)"

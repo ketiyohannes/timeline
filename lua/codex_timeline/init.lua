@@ -5,10 +5,16 @@ local M = {}
 local namespace = vim.api.nvim_create_namespace("codex_timeline")
 local config = {
   annotate_on_buf_enter = true,
+  auto_sync = true,
   virtual_text = false,
   session = nil,
 }
 local selected_refs = {}
+local synced_roots = {}
+local project_ref = "refs/codex-timeline/session-project"
+local module_path = debug.getinfo(1, "S").source:sub(2)
+local plugin_root = vim.fn.fnamemodify(module_path, ":p:h:h:h")
+local recorder = plugin_root .. "/bin/codex-timeline"
 
 local function root_for_current_buffer()
   local name = vim.api.nvim_buf_get_name(0)
@@ -16,6 +22,48 @@ local function root_for_current_buffer()
     return git.root(vim.fn.fnamemodify(name, ":h"))
   end
   return git.root()
+end
+
+local function sync_root(root, notify_user, callback)
+  if not root or not git.enabled(root) then
+    if callback then callback(false) end
+    return
+  end
+  if synced_roots[root] or git.has_ref(root, project_ref) then
+    synced_roots[root] = true
+    if notify_user then
+      vim.notify("Codex Timeline is synchronized with this repository")
+    end
+    if callback then callback(true) end
+    return
+  end
+  if vim.fn.executable(recorder) ~= 1 then
+    if notify_user then
+      vim.notify("Codex Timeline recorder is not executable: " .. recorder, vim.log.levels.ERROR)
+    end
+    if callback then callback(false) end
+    return
+  end
+
+  vim.system({
+    recorder, "start", "--repo", root, "--session", "project",
+    "--label", "existing project baseline", "--event", "nvim-sync",
+  }, { text = true }, function(result)
+    vim.schedule(function()
+      if result.code == 0 then
+        synced_roots[root] = true
+        if notify_user then
+          vim.notify("Codex Timeline baseline created; future Codex changes will stay synchronized")
+        end
+        if callback then callback(true) end
+      else
+        if notify_user then
+          vim.notify("Codex Timeline sync failed: " .. vim.trim(result.stderr or "unknown error"), vim.log.levels.ERROR)
+        end
+        if callback then callback(false) end
+      end
+    end)
+  end)
 end
 
 local function current_context()
@@ -28,7 +76,10 @@ local function current_context()
   if not root then
     return nil
   end
-  local ref = selected_refs[root] or (config.session and ("refs/codex-timeline/session-" .. config.session)) or git.latest_ref(root)
+  local ref = selected_refs[root]
+    or (config.session and ("refs/codex-timeline/session-" .. config.session))
+    or (git.has_ref(root, project_ref) and project_ref)
+    or git.latest_ref(root)
   if not ref then
     return nil
   end
@@ -102,8 +153,16 @@ end
 
 function M.open()
   local root = root_for_current_buffer()
+  if root and config.auto_sync and not selected_refs[root] and not config.session and not git.has_ref(root, project_ref) then
+    sync_root(root, true, function(ok)
+      if ok then ui.open({ ref = project_ref }) end
+    end)
+    return
+  end
   if root and selected_refs[root] then
     ui.open({ ref = selected_refs[root] })
+  elseif root and not config.session and git.has_ref(root, project_ref) then
+    ui.open({ ref = project_ref })
   else
     ui.open({ session = config.session })
   end
@@ -136,18 +195,38 @@ function M.set_enabled(enabled)
   vim.notify("Codex Timeline recording " .. (enabled and "enabled" or "disabled") .. " for " .. root)
 end
 
+function M.sync()
+  local root = root_for_current_buffer()
+  if not root then
+    vim.notify("Codex Timeline: current buffer is not in a Git repository", vim.log.levels.WARN)
+    return
+  end
+  sync_root(root, true, function(ok)
+    if ok then M.annotate() end
+  end)
+end
+
 function M.setup(opts)
   config = vim.tbl_deep_extend("force", config, opts or {})
   vim.api.nvim_set_hl(0, "CodexTimelineSign", { default = true, link = "DiagnosticInfo" })
   vim.api.nvim_set_hl(0, "CodexTimelineVirtualText", { default = true, link = "Comment" })
 
   local group = vim.api.nvim_create_augroup("CodexTimeline", { clear = true })
-  if config.annotate_on_buf_enter then
-    vim.api.nvim_create_autocmd({ "BufEnter", "FocusGained", "FileChangedShellPost" }, {
-      group = group,
-      callback = function() vim.schedule(M.annotate) end,
-    })
-  end
+  vim.api.nvim_create_autocmd({ "BufEnter", "FocusGained", "FileChangedShellPost" }, {
+    group = group,
+    callback = function()
+      vim.schedule(function()
+        local root = root_for_current_buffer()
+        if config.auto_sync then
+          sync_root(root, false, function(ok)
+            if ok and config.annotate_on_buf_enter then M.annotate() end
+          end)
+        elseif config.annotate_on_buf_enter then
+          M.annotate()
+        end
+      end)
+    end,
+  })
 end
 
 return M
