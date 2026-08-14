@@ -50,6 +50,36 @@ assert(change_text:find("#002%s+refactor"), "second change number and message we
 assert(not change_text:find("%d%d:%d%d:%d%d"), "timeline leaked timestamp metadata")
 assert(not change_text:find("[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]"), "timeline leaked commit hash metadata")
 
+-- Commit search accepts both change numbers and message fragments, highlights
+-- every result, and wraps in both directions.
+local ui = require("codex_timeline.ui")
+ui.search("#002")
+assert(ui_state.search.query == "#002", "search query was not retained")
+assert(#ui_state.search.matches == 1, "change-number search should find exactly one commit")
+assert(vim.api.nvim_win_get_cursor(ui_state.windows.changes)[1] == 3, "search did not select change #002")
+local search_namespace = vim.api.nvim_get_namespaces().timeline_search
+local search_marks = vim.api.nvim_buf_get_extmarks(roles.changes, search_namespace, 0, -1, { details = true })
+assert(#search_marks == 1, "search result was not highlighted")
+assert(search_marks[1][4].line_hl_group == "TimelineSearchCurrent", "selected search result is not distinct")
+local search_title = vim.api.nvim_win_get_config(ui_state.windows.changes).title
+if type(search_title) == "table" then
+  local parts = {}
+  for _, part in ipairs(search_title) do parts[#parts + 1] = type(part) == "table" and part[1] or part end
+  search_title = table.concat(parts)
+end
+assert(search_title:find("1 match", 1, true), "changes title does not show the search result count")
+
+ui.search("a")
+assert(#ui_state.search.matches == 3, "message-fragment search did not find every commit")
+assert(vim.api.nvim_win_get_cursor(ui_state.windows.changes)[1] == 3, "search should start at the current matching commit")
+ui.next_match(1)
+assert(vim.api.nvim_win_get_cursor(ui_state.windows.changes)[1] == 1, "next search match did not wrap")
+ui.next_match(-1)
+assert(vim.api.nvim_win_get_cursor(ui_state.windows.changes)[1] == 3, "previous search match did not wrap")
+ui.search("")
+assert(ui_state.search.query == "" and #ui_state.search.matches == 0, "empty search did not clear results")
+assert(#vim.api.nvim_buf_get_extmarks(roles.changes, search_namespace, 0, -1, {}) == 0, "cleared search left highlights")
+
 local file_text = table.concat(vim.api.nvim_buf_get_lines(roles.files, 0, -1, false), "\n")
 assert(file_text:find("example.txt", 1, true), "changed file is missing from snapshot codebase")
 assert(file_text:find("added.txt", 1, true), "added file is missing from snapshot codebase")
@@ -126,7 +156,7 @@ local earlier_source = vim.api.nvim_buf_get_lines(roles.source, 0, -1, false)
 assert(earlier_source[1] == "alpha" and earlier_source[2] == "beta", "earlier source snapshot was not reconstructed")
 local earlier_marks = vim.api.nvim_buf_get_extmarks(roles.source, snapshot_namespace, 0, -1, { details = true })
 assert(#earlier_marks == 1 and vim.trim(earlier_marks[1][4].sign_text) == "+", "earlier addition highlight is wrong")
-require("codex_timeline.ui").close()
+ui.close()
 
 -- Commands invoked from virtual buffers (including :checkhealth output) must
 -- fall back to Neovim's cwd instead of using a health:// URI as a process cwd.

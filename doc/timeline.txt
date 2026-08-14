@@ -17,9 +17,11 @@ COMMANDS                                                  *timeline-commands*
     with bold + and - highlights.
 
     Press <CR> to move right, 1/2/3 to focus a pane, [c and ]c to traverse
-    events, r to refresh, and q or <Esc> to close. The panes resize with the
-    editor. Selecting a changed file scrolls its complete source snapshot so
-    the first highlighted line is at the top of the Code pane.
+    events, r to refresh, and q or <Esc> to close. Press / from any pane to
+    search commit messages or change numbers, then n or N to move through
+    matching commits. An empty search clears the matches. The panes resize
+    with the editor. Selecting a changed file scrolls its complete source
+    snapshot so the first highlighted line is at the top of the Code pane.
 
 :TimelineSync
     Import the current HEAD's reachable commit history, then capture modified

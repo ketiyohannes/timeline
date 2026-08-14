@@ -121,10 +121,14 @@ Keys:
 | `Enter` | Move from Changes to Codebase, then to Code |
 | `1` / `2` / `3` | Focus a pane directly |
 | `[c` / `]c` | Select the previous or next event from any pane |
+| `/` | Search commit messages or change numbers such as `#012` |
+| `n` / `N` | Jump to the next or previous search match |
 | `r` | Refresh the browser |
 | `q` / `Esc` | Close the browser |
 
 Changed files are selected automatically. Added files are green, deleted files are red, and modified files are amber. Deleted files remain visible at their deletion event so their complete previous content can be inspected.
+
+Search is case-insensitive and available from every pane. Matching commits are highlighted in Changes, the pane title shows the result count, and navigation wraps at either end. Submit an empty search to clear it.
 
 The three panes resize and recenter automatically whenever the Neovim window changes size. When you select a changed file, the Code pane keeps the complete file loaded but scrolls so its first highlighted line is at the top of the viewport. A change beginning at line 300 therefore opens with line 300 visible first.
 

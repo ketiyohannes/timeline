@@ -2,6 +2,7 @@ local git = require("codex_timeline.git")
 
 local M = {}
 local namespace = vim.api.nvim_create_namespace("codex_timeline_snapshot")
+local search_namespace = vim.api.nvim_create_namespace("timeline_search")
 local state = {
   windows = {},
   buffers = {},
@@ -12,6 +13,7 @@ local state = {
   ref = nil,
   event = nil,
   augroup = nil,
+  search = { query = "", matches = {}, index = 0 },
 }
 
 local function valid_window(window)
@@ -22,6 +24,7 @@ local function close()
   local windows = state.windows
   state.windows = {}
   state.buffers = {}
+  state.search = { query = "", matches = {}, index = 0 }
   if state.augroup then
     pcall(vim.api.nvim_del_augroup_by_id, state.augroup)
     state.augroup = nil
@@ -31,6 +34,10 @@ local function close()
       vim.api.nvim_win_close(window, true)
     end
   end
+end
+
+local function event_marker(event)
+  return event.sequence == 0 and "base" or string.format("#%03d", event.sequence)
 end
 
 local function dimensions()
@@ -96,8 +103,7 @@ local function current_file()
 end
 
 local function source_title(event)
-  local marker = event.sequence == 0 and "base" or string.format("#%03d", event.sequence)
-  return string.format(" %s · %s ", marker, event.subject)
+  return string.format(" %s · %s ", event_marker(event), event.subject)
 end
 
 local function render_source()
@@ -202,6 +208,115 @@ local function render_event()
   render_source()
 end
 
+local function search_title()
+  if state.search.query == "" then
+    return " Changes "
+  end
+  local count = #state.search.matches
+  if count == 0 then
+    return " Changes · no matches "
+  end
+  return string.format(" Changes · %d %s ", count, count == 1 and "match" or "matches")
+end
+
+local function render_search()
+  local buffer = state.buffers.changes
+  if not buffer or not vim.api.nvim_buf_is_valid(buffer) then
+    return
+  end
+
+  vim.api.nvim_buf_clear_namespace(buffer, search_namespace, 0, -1)
+  for match_index, row in ipairs(state.search.matches) do
+    vim.api.nvim_buf_set_extmark(buffer, search_namespace, row - 1, 0, {
+      line_hl_group = match_index == state.search.index and "TimelineSearchCurrent" or "TimelineSearchMatch",
+      priority = match_index == state.search.index and 80 or 60,
+    })
+  end
+
+  if valid_window(state.windows.changes) then
+    vim.api.nvim_win_set_config(state.windows.changes, {
+      title = search_title(),
+      title_pos = "center",
+    })
+  end
+end
+
+local function select_search_match(index)
+  local matches = state.search.matches
+  if #matches == 0 or not valid_window(state.windows.changes) then
+    return
+  end
+  state.search.index = ((index - 1) % #matches) + 1
+  vim.api.nvim_win_set_cursor(state.windows.changes, { matches[state.search.index], 0 })
+  render_search()
+  render_event()
+end
+
+local function sync_search_to_cursor()
+  if #state.search.matches == 0 or not valid_window(state.windows.changes) then
+    return
+  end
+  local row = vim.api.nvim_win_get_cursor(state.windows.changes)[1]
+  for index, match_row in ipairs(state.search.matches) do
+    if match_row == row then
+      state.search.index = index
+      render_search()
+      return
+    end
+  end
+end
+
+function M.search(query)
+  if query == nil then
+    vim.ui.input({ prompt = "Search commits: ", default = state.search.query }, function(input)
+      if input ~= nil then
+        M.search(input)
+      end
+    end)
+    return
+  end
+
+  query = vim.trim(query)
+  state.search = { query = query, matches = {}, index = 0 }
+  if query == "" then
+    render_search()
+    return
+  end
+
+  local needle = query:lower()
+  for row, event in ipairs(state.events) do
+    local searchable = string.format("%s %s", event_marker(event), event.subject):lower()
+    if searchable:find(needle, 1, true) then
+      state.search.matches[#state.search.matches + 1] = row
+    end
+  end
+
+  if #state.search.matches == 0 then
+    render_search()
+    vim.notify(string.format('Timeline: no commits match "%s"', query), vim.log.levels.INFO)
+    return
+  end
+
+  local current_row = valid_window(state.windows.changes)
+      and vim.api.nvim_win_get_cursor(state.windows.changes)[1]
+    or 1
+  local selected = 1
+  for index, row in ipairs(state.search.matches) do
+    if row >= current_row then
+      selected = index
+      break
+    end
+  end
+  select_search_match(selected)
+end
+
+function M.next_match(direction)
+  if #state.search.matches == 0 then
+    return
+  end
+  select_search_match(state.search.index + (direction or 1))
+end
+
 local function focus(role)
   if valid_window(state.windows[role]) then
     vim.api.nvim_set_current_win(state.windows[role])
@@ -245,6 +360,7 @@ function M.open(opts)
   end
 
   state.root, state.ref, state.events = root, ref, events
+  state.search = { query = "", matches = {}, index = 0 }
   local size = dimensions()
   for _, role in ipairs({ "changes", "files", "source" }) do
     state.buffers[role] = vim.api.nvim_create_buf(false, true)
@@ -269,8 +385,7 @@ function M.open(opts)
 
   local event_lines = {}
   for _, event in ipairs(events) do
-    local marker = event.sequence == 0 and "base" or string.format("#%03d", event.sequence)
-    event_lines[#event_lines + 1] = string.format("%-5s %s", marker, event.subject)
+    event_lines[#event_lines + 1] = string.format("%-5s %s", event_marker(event), event.subject)
   end
   set_lines(state.buffers.changes, event_lines)
   for index, _ in ipairs(events) do
@@ -309,7 +424,10 @@ function M.open(opts)
 
   state.augroup = vim.api.nvim_create_augroup("TimelineUI", { clear = true })
   vim.api.nvim_create_autocmd("CursorMoved", {
-    group = state.augroup, buffer = state.buffers.changes, callback = render_event,
+    group = state.augroup, buffer = state.buffers.changes, callback = function()
+      sync_search_to_cursor()
+      render_event()
+    end,
   })
   vim.api.nvim_create_autocmd("CursorMoved", {
     group = state.augroup, buffer = state.buffers.files, callback = render_source,
@@ -326,6 +444,9 @@ function M.open(opts)
   map_all("<Esc>", close, "Close Timeline")
   map_all("[c", function() move_event(-1) end, "Previous recorded change")
   map_all("]c", function() move_event(1) end, "Next recorded change")
+  map_all("/", function() M.search() end, "Search commits")
+  map_all("n", function() M.next_match(1) end, "Next commit search match")
+  map_all("N", function() M.next_match(-1) end, "Previous commit search match")
   map_all("1", function() focus("changes") end, "Focus recorded changes")
   map_all("2", function() focus("files") end, "Focus snapshot codebase")
   map_all("3", function() focus("source") end, "Focus snapshot source")
