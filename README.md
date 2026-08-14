@@ -134,6 +134,24 @@ The three panes resize and recenter automatically whenever the Neovim window cha
 
 When you select a changed file, the Code pane keeps the complete file loaded but scrolls so its first highlighted line is at the top of the viewport. A change beginning at line 300 therefore opens with line 300 visible first.
 
+### Code pane header
+
+The Code pane keeps the event and file identity visible as two separate fixed rows:
+
+```text
+╭────────────── #012 · refactor authentication ──────────────╮
+│                     src/auth/session.ts                     │
+│  1  export function createSession() {                       │
+│  2    // complete historical source                         │
+```
+
+- The border title is the selected change number and its commit message or recorded Codex label.
+- The row beneath it is the repository-relative path of the file currently open in Code.
+- Selecting a different Codebase row or file-search result updates the path immediately.
+- Scrolling the source keeps both rows fixed, including when Timeline starts at a deep highlighted line.
+
+The path is display-only: it is not inserted into the historical buffer, does not alter line numbers, and does not interfere with copying source or diff highlights. Long paths are visually truncated to the available Code-pane width; the complete path remains visible in Codebase and searchable with `F`.
+
 ### Searching commits
 
 Press `/` from any pane to open a dedicated `Search commits` bar above Changes. The pane makes room for the bar, and both stay aligned as Neovim resizes. Nothing is entered through Neovim's bottom command line.

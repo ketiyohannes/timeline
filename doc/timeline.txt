@@ -16,6 +16,7 @@ COMMANDS                                                  *timeline-commands*
     Codebase shows every file at the event, and Code shows the complete file
     with bold + and - highlights. The Code title contains the change number and
     message, with the opened repository-relative path fixed directly below it.
+    See |timeline-code-header|.
 
     Press <CR> to move right, 1/2/3 to focus a pane, [c and ]c to traverse
     events, r to refresh, and q or <Esc> to close. Press / from any pane to
@@ -49,6 +50,24 @@ COMMANDS                                                  *timeline-commands*
 
 ]t / [t
     Jump to the next or previous annotated line.
+
+==============================================================================
+CODE PANE HEADER                                      *timeline-code-header*
+
+Code keeps the selected event and file visible in two fixed rows:
+>
+    #012 · refactor authentication
+    src/auth/session.ts
+<
+The first row is the change number and commit message or recorded Codex label.
+The second is the repository-relative path currently open in Code. Selecting a
+Codebase row or |timeline-file-search| result updates the path immediately.
+
+Both rows stay visible while the source scrolls, including when the viewport
+starts at a deep highlighted line. The path is display-only: it is not inserted
+into the historical buffer and does not affect line numbers, copying source, or
+diff highlights. Long paths are visually truncated to the Code pane width; the
+complete path remains available in Codebase and file search.
 
 ==============================================================================
 COMMIT SEARCH                                             *timeline-search*
