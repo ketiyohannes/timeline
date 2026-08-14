@@ -270,6 +270,53 @@ assert(source_marks[1][4].sign_hl_group == "CodexTimelineDeleteSign", "removed s
 assert(source_marks[2][4].line_hl_group == "CodexTimelineAddLine", "added line highlight is not theme-aware")
 assert(source_marks[2][4].sign_hl_group == "CodexTimelineAddSign", "added sign highlight is not bold")
 
+-- Code search can switch between the opened file and every file in the
+-- selected historical snapshot. Cross-file results update both source panes.
+ui.toggle_search_bar("code")
+code_bar = assert(ui_state.search_bars.code, "scoped code search bar did not open")
+assert(window_title(code_bar.window):find("this file", 1, true), "code search did not default to this file")
+local has_tab_mapping = false
+for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(code_bar.buffer, "i")) do
+  if mapping.lhs == "<Tab>" then has_tab_mapping = true end
+end
+assert(has_tab_mapping, "code search bar does not expose the Tab scope toggle")
+
+vim.api.nvim_buf_set_lines(code_bar.buffer, 0, -1, false, { "sharedSearchTarget" })
+vim.cmd.doautocmd("TextChangedI")
+assert(#ui_state.code_search.matches == 0, "this-file search leaked a result from another file")
+ui.toggle_code_search_scope()
+assert(ui_state.code_search.scope == "commit", "code search did not switch to all-files scope")
+assert(window_title(code_bar.window):find("all files", 1, true), "search bar does not show all-files scope")
+assert(#ui_state.code_search.matches == 1, "all-files search missed an untouched historical file")
+assert(ui_state.code_search.matches[1].path == "shared.lua", "all-files search returned the wrong path")
+assert(vim.b[roles.source].codex_timeline_path == "shared.lua", "all-files result did not open its file")
+assert(vim.wo[ui_state.windows.source].winbar:find("shared.lua", 1, true), "result path did not update")
+
+vim.api.nvim_buf_set_lines(code_bar.buffer, 0, -1, false, { "stable" })
+vim.cmd.doautocmd("TextChangedI")
+assert(#ui_state.code_search.matches == 1, "all-files search missed event-local deleted code")
+assert(ui_state.code_search.matches[1].path == "unchanged.txt", "deleted-code result has the wrong path")
+assert(vim.b[roles.source].codex_timeline_path == "unchanged.txt", "deleted-code result did not open its file")
+
+vim.api.nvim_buf_set_lines(code_bar.buffer, 0, -1, false, { "a" })
+vim.cmd.doautocmd("TextChangedI")
+local matching_paths = {}
+for _, match in ipairs(ui_state.code_search.matches) do matching_paths[match.path] = true end
+assert(matching_paths["deep.txt"] and matching_paths["example.txt"] and matching_paths["shared.lua"],
+  "all-files search did not aggregate matches across the snapshot")
+ui.next_code_match(1)
+assert(vim.b[roles.source].codex_timeline_path == "deep.txt", "next code result did not wrap into another file")
+assert(vim.api.nvim_win_get_cursor(ui_state.windows.source)[1] == 301, "cross-file result did not jump to its line")
+
+vim.api.nvim_buf_set_lines(code_bar.buffer, 0, -1, false, { "alpha" })
+vim.cmd.doautocmd("TextChangedI")
+assert(vim.b[roles.source].codex_timeline_path == "example.txt", "all-files search did not return to example.txt")
+ui.toggle_code_search_scope()
+assert(ui_state.code_search.scope == "file", "code search did not switch back to this-file scope")
+vim.api.nvim_buf_set_lines(code_bar.buffer, 0, -1, false, { "" })
+vim.cmd.doautocmd("TextChangedI")
+ui.toggle_search_bar("code")
+
 -- Moving to a file with a deep change keeps the complete file but starts the
 -- source viewport at the first highlighted line.
 ui.search_code("gamma")

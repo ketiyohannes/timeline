@@ -10,9 +10,11 @@ git -C "$test_root" config user.name Test
 git -C "$test_root" config user.email test@example.com
 printf 'alpha\n' > "$test_root/example.txt"
 printf 'stable\n' > "$test_root/unchanged.txt"
+printf 'function sharedSearchTarget() end\n' > "$test_root/shared.lua"
 awk 'BEGIN { for (line = 1; line <= 400; line++) print "line " line }' > "$test_root/deep.txt"
 git -C "$test_root" add example.txt
 git -C "$test_root" add unchanged.txt
+git -C "$test_root" add shared.lua
 git -C "$test_root" add deep.txt
 git -C "$test_root" commit -qm baseline
 "$project_root/bin/timeline" start --repo "$test_root" --session nvim >/dev/null

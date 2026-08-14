@@ -7,6 +7,12 @@ local file_search_namespace = vim.api.nvim_create_namespace("timeline_file_searc
 local code_search_namespace = vim.api.nvim_create_namespace("timeline_code_search")
 local update_search_bar
 local render_code_search
+local apply_file_filter
+
+local function empty_code_search(scope)
+  return { query = "", matches = {}, index = 0, scope = scope or "file" }
+end
+
 local state = {
   windows = {},
   buffers = {},
@@ -21,7 +27,9 @@ local state = {
   augroup = nil,
   search = { query = "", matches = {}, index = 0 },
   file_search = { query = "", matches = {}, index = 0 },
-  code_search = { query = "", matches = {}, index = 0 },
+  code_search = empty_code_search(),
+  snapshot_cache = {},
+  navigating_code_search = false,
   search_bars = {},
 }
 
@@ -39,7 +47,9 @@ local function close()
   state.visible_files = {}
   state.search = { query = "", matches = {}, index = 0 }
   state.file_search = { query = "", matches = {}, index = 0 }
-  state.code_search = { query = "", matches = {}, index = 0 }
+  state.code_search = empty_code_search()
+  state.snapshot_cache = {}
+  state.navigating_code_search = false
   state.event = nil
   if state.augroup then
     pcall(vim.api.nvim_del_augroup_by_id, state.augroup)
@@ -168,13 +178,23 @@ local function source_winbar(path)
   return string.format("%%#CodexTimelineFilePath#%%=%%< %s %%=", escaped)
 end
 
+local function get_file_snapshot(path)
+  local cached = state.snapshot_cache[path]
+  if cached then
+    return cached.lines, cached.highlights, cached.err
+  end
+  local lines, highlights, err = git.file_snapshot(state.root, state.event, path, state.changes[path])
+  state.snapshot_cache[path] = { lines = lines, highlights = highlights, err = err }
+  return lines, highlights, err
+end
+
 local function render_source()
   local event, path = state.event, current_file()
   if not event or not path or not state.buffers.source then
     return
   end
 
-  local lines, highlights, err = git.file_snapshot(state.root, event, path, state.changes[path])
+  local lines, highlights, err = get_file_snapshot(path)
   if not lines then
     vim.notify("Timeline: " .. (err or "unable to read snapshot file"), vim.log.levels.ERROR)
     lines, highlights = { "" }, {}
@@ -182,8 +202,8 @@ local function render_source()
 
   local buffer = state.buffers.source
   local previous_path = vim.b[buffer].codex_timeline_path
-  if previous_path and previous_path ~= path then
-    state.code_search = { query = "", matches = {}, index = 0 }
+  if previous_path and previous_path ~= path and not state.navigating_code_search then
+    state.code_search = empty_code_search()
     if update_search_bar then
       update_search_bar("code", "")
     end
@@ -259,29 +279,72 @@ render_code_search = function(jump)
   if not buffer or not vim.api.nvim_buf_is_valid(buffer) then
     return
   end
+  local path = current_file()
   vim.api.nvim_buf_clear_namespace(buffer, code_search_namespace, 0, -1)
   for index, match in ipairs(state.code_search.matches) do
-    local group = index == state.code_search.index and "TimelineCodeSearchCurrent" or "TimelineCodeSearchMatch"
-    local options = { priority = index == state.code_search.index and 170 or 150 }
-    if match.line_only then
-      options.line_hl_group = group
-    else
-      options.end_col = match.end_col
-      options.hl_group = group
+    if match.path == path then
+      local current = index == state.code_search.index
+      local group = current and "TimelineCodeSearchCurrent" or "TimelineCodeSearchMatch"
+      local options = { priority = current and 170 or 150 }
+      if match.line_only then
+        options.line_hl_group = group
+      else
+        options.end_col = match.end_col
+        options.hl_group = group
+      end
+      vim.api.nvim_buf_set_extmark(buffer, code_search_namespace, match.line - 1, match.start_col, options)
     end
-    vim.api.nvim_buf_set_extmark(buffer, code_search_namespace, match.line - 1, match.start_col, options)
   end
   if update_search_bar then
     update_search_bar("code", state.code_search.query)
   end
 
   local match = state.code_search.matches[state.code_search.index]
-  if jump and match and valid_window(state.windows.source) then
+  if jump and match and match.path == path and valid_window(state.windows.source) then
     vim.api.nvim_win_set_cursor(state.windows.source, { match.line, match.start_col })
     vim.api.nvim_win_call(state.windows.source, function()
       vim.cmd("normal! zz")
     end)
   end
+end
+
+local function append_code_matches(matches, path, lines, needle)
+  for line_number, line in ipairs(lines or {}) do
+    local searchable = line:lower()
+    local from = 1
+    while true do
+      local start_index, end_index = searchable:find(needle, from, true)
+      if not start_index then
+        break
+      end
+      matches[#matches + 1] = {
+        path = path,
+        line = line_number,
+        start_col = start_index - 1,
+        end_col = end_index,
+      }
+      from = end_index + 1
+    end
+  end
+end
+
+local function navigate_code_match(index)
+  local count = #state.code_search.matches
+  if count == 0 then
+    render_code_search(false)
+    return
+  end
+  state.code_search.index = ((index - 1) % count) + 1
+  local match = state.code_search.matches[state.code_search.index]
+  if match.path ~= current_file() then
+    state.navigating_code_search = true
+    apply_file_filter("", match.path)
+    state.navigating_code_search = false
+    if update_search_bar then
+      update_search_bar("files", "")
+    end
+  end
+  render_code_search(true)
 end
 
 function M.search_code(query)
@@ -290,54 +353,76 @@ function M.search_code(query)
     return
   end
   query = vim.trim(query)
-  local buffer = state.buffers.source
-  if not buffer or not vim.api.nvim_buf_is_valid(buffer) then
+  local path = current_file()
+  if not path then
     return
   end
 
   local cursor = valid_window(state.windows.source)
       and vim.api.nvim_win_get_cursor(state.windows.source)
     or { 1, 0 }
-  local lines = vim.api.nvim_buf_get_lines(buffer, 0, -1, false)
   local matches = {}
   local requested_line = query:match("^:(%d+)$")
   if requested_line then
+    local lines = get_file_snapshot(path)
+    lines = lines or {}
     requested_line = tonumber(requested_line)
     if requested_line >= 1 and requested_line <= #lines then
-      matches[1] = { line = requested_line, start_col = 0, line_only = true }
+      matches[1] = { path = path, line = requested_line, start_col = 0, line_only = true }
     end
   elseif query ~= "" then
     local needle = query:lower()
-    for line_number, line in ipairs(lines) do
-      local searchable = line:lower()
-      local from = 1
-      while true do
-        local start_index, end_index = searchable:find(needle, from, true)
-        if not start_index then
-          break
-        end
-        matches[#matches + 1] = {
-          line = line_number,
-          start_col = start_index - 1,
-          end_col = end_index,
-        }
-        from = end_index + 1
+    if state.code_search.scope == "commit" then
+      local candidates = {}
+      for _, candidate in ipairs(git.search_paths(state.root, state.event, query)) do
+        candidates[candidate] = true
       end
+      -- Git grep sees only the selected tree. Changed files are also scanned
+      -- so removed lines in Timeline's event-local source remain searchable.
+      for changed_path, _ in pairs(state.changes) do
+        candidates[changed_path] = true
+      end
+      for _, candidate in ipairs(state.files) do
+        if candidates[candidate] then
+          local lines = get_file_snapshot(candidate)
+          append_code_matches(matches, candidate, lines, needle)
+        end
+      end
+    else
+      local lines = get_file_snapshot(path)
+      append_code_matches(matches, path, lines, needle)
     end
   end
 
   local selected = 0
   if #matches > 0 then
+    local path_order = {}
+    for index, candidate in ipairs(state.files) do
+      path_order[candidate] = index
+    end
+    local current_order = path_order[path] or 0
     selected = 1
     for index, match in ipairs(matches) do
-      if match.line > cursor[1] or (match.line == cursor[1] and match.start_col >= cursor[2]) then
+      local order = path_order[match.path] or 0
+      local after_cursor = match.path == path
+        and (match.line > cursor[1] or (match.line == cursor[1] and match.start_col >= cursor[2]))
+      if order > current_order or after_cursor then
         selected = index
         break
       end
     end
   end
-  state.code_search = { query = query, matches = matches, index = selected }
-  render_code_search(query ~= "" and #matches > 0)
+  state.code_search = {
+    query = query,
+    matches = matches,
+    index = selected,
+    scope = state.code_search.scope or "file",
+  }
+  if query ~= "" and #matches > 0 then
+    navigate_code_match(selected)
+  else
+    render_code_search(false)
+  end
 end
 
 function M.next_code_match(direction)
@@ -345,8 +430,12 @@ function M.next_code_match(direction)
   if state.code_search.query == "" or count == 0 then
     return
   end
-  state.code_search.index = ((state.code_search.index - 1 + (direction or 1)) % count) + 1
-  render_code_search(true)
+  navigate_code_match(state.code_search.index + (direction or 1))
+end
+
+function M.toggle_code_search_scope()
+  state.code_search.scope = state.code_search.scope == "commit" and "file" or "commit"
+  M.search_code(state.code_search.query)
 end
 
 local function render_files(preferred_path)
@@ -394,7 +483,7 @@ local function render_files(preferred_path)
   render_source()
 end
 
-local function apply_file_filter(query, preferred_path)
+apply_file_filter = function(query, preferred_path)
   query = vim.trim(query or "")
   local needle = query:lower()
   local matches, visible = {}, {}
@@ -475,7 +564,8 @@ local function render_event()
   state.event = event
   if event_changed then
     state.file_search = { query = "", matches = {}, index = 0 }
-    state.code_search = { query = "", matches = {}, index = 0 }
+    state.code_search = empty_code_search()
+    state.snapshot_cache = {}
     if update_search_bar then
       update_search_bar("files", "")
       update_search_bar("code", "")
@@ -661,7 +751,10 @@ local function search_bar_title(role)
   if role == "commits" then
     return " Search commits "
   elseif role == "code" then
-    return match_title("Search code", state.code_search.query, #state.code_search.matches)
+    local scope = state.code_search.scope == "commit" and "all files" or "this file"
+    local toggle = state.code_search.scope == "commit" and "Tab: this file" or "Tab: all files"
+    return match_title(string.format("Code · %s · %s", scope, toggle), state.code_search.query,
+      #state.code_search.matches)
   end
   local marker = state.event and event_marker(state.event) or "current"
   return string.format(" Search files in %s ", marker)
@@ -778,6 +871,13 @@ function M.toggle_search_bar(role)
   vim.keymap.set("i", "<C-c>", finish_search, { buffer = buffer, silent = true, nowait = true })
   vim.keymap.set("n", "q", function() close_search_bar(role) end, { buffer = buffer, silent = true })
   vim.keymap.set("n", "<Esc>", function() close_search_bar(role) end, { buffer = buffer, silent = true })
+  if role == "code" then
+    local function toggle_scope()
+      M.toggle_code_search_scope()
+    end
+    vim.keymap.set("i", "<Tab>", toggle_scope, { buffer = buffer, silent = true, nowait = true })
+    vim.keymap.set("n", "<Tab>", toggle_scope, { buffer = buffer, silent = true, nowait = true })
+  end
 
   apply_layout()
   vim.api.nvim_win_set_cursor(window, { 1, #query })
@@ -809,7 +909,9 @@ function M.open(opts)
   state.files, state.visible_files = {}, {}
   state.search = { query = "", matches = {}, index = 0 }
   state.file_search = { query = "", matches = {}, index = 0 }
-  state.code_search = { query = "", matches = {}, index = 0 }
+  state.code_search = empty_code_search()
+  state.snapshot_cache = {}
+  state.navigating_code_search = false
   local size = dimensions()
   for _, role in ipairs({ "changes", "files", "source" }) do
     state.buffers[role] = vim.api.nvim_create_buf(false, true)
@@ -904,7 +1006,7 @@ function M.open(opts)
   map_all("F", function() M.search_files() end, "Search files in selected commit")
   map_all("[f", function() M.next_file_match(-1) end, "Previous file search match")
   map_all("]f", function() M.next_file_match(1) end, "Next file search match")
-  map_all("C", function() M.search_code() end, "Search code in selected historical file")
+  map_all("C", function() M.search_code() end, "Search code in selected historical snapshot")
   map_all("[s", function() M.next_code_match(-1) end, "Previous code search match")
   map_all("]s", function() M.next_code_match(1) end, "Next code search match")
   map_all("1", function() focus("changes") end, "Focus recorded changes")

@@ -125,7 +125,8 @@ Keys:
 | `n` / `N` | Jump to the next or previous search match |
 | `F` | Toggle real-time file search for the selected commit |
 | `[f` / `]f` | Jump to the previous or next file match |
-| `C` | Toggle real-time search inside the opened historical file |
+| `C` | Toggle real-time code search for the opened file or selected commit |
+| `Tab` | Toggle `This file` / `All files` while the code-search bar is open |
 | `[s` / `]s` | Jump to the previous or next code match |
 | `r` | Refresh the browser |
 | `q` / `Esc` | Close the browser |
@@ -192,7 +193,9 @@ Delete all text in the bar to restore the complete snapshot tree. Switching to a
 
 ### Searching inside code
 
-Press `C` from any pane to open a dedicated search bar above Code. Results update after every keystroke and the bar title reports the number of matching occurrences.
+Press `C` from any pane to open a dedicated search bar above Code. Results update after every keystroke, and the bar title reports both the active scope and the number of matching occurrences.
+
+Code search starts in **This file** scope. Press `Tab` while the search bar is open to switch to **All files** in the selected commit; press `Tab` again to return to the opened file. The title always shows the current scope and the available toggle, for example `Code · all files · Tab: this file`.
 
 Code search is case-insensitive and matches literal source text. It works well for function names, variables, error messages, imports, and any other line fragment:
 
@@ -200,9 +203,11 @@ Code search is case-insensitive and matches literal source text. It works well f
 - `throw new Error` finds matching error paths.
 - `:300` jumps directly to line 300.
 
-Unlike commit and file search, code search never removes nonmatching lines. The complete historical file stays loaded, each occurrence is highlighted in place, and the active match is visually distinct. Searches include event-local removed lines because those lines are intentionally interleaved with additions in Timeline's historical view.
+Unlike commit and file search, code search never removes nonmatching source lines. The complete historical file stays loaded, each occurrence is highlighted in place, and the active match is visually distinct. Searches include event-local removed lines because those lines are intentionally interleaved with additions in Timeline's historical view.
 
-Press `Enter` or `Esc` to hide the bar while retaining its highlights. Use `]s` and `[s` from any pane to move through occurrences with wraparound. Delete all search text to clear the highlights. Selecting another file or commit clears code search automatically so results cannot leak into a different snapshot.
+In **All files** scope, Timeline searches every file in that historical snapshot—not the current working tree. Unchanged files are included, and modified or deleted files are searched exactly as Code displays them, including removed lines. Choosing a result, or using `]s` and `[s`, automatically selects the matching path in Codebase and centers its line in Code.
+
+The `:300` form always jumps to line 300 of the currently opened file, regardless of scope. Press `Enter` or `Esc` to hide the bar while retaining its highlights. Use `]s` and `[s` from any pane to move through occurrences with wraparound. Delete all search text to clear the highlights. Manually selecting another file or commit clears code search and resets its scope to **This file**.
 
 ## How synchronization works
 

@@ -136,6 +136,29 @@ function M.tree(root, event)
   return vim.split(vim.trim(output), "\n", { plain = true, trimempty = true })
 end
 
+function M.search_paths(root, event, query)
+  if not query or query == "" then
+    return {}
+  end
+  local output = run({
+    "git", "grep", "-l", "-I", "-i", "-F", "-z", "-e", query,
+    event.hash, "--",
+  }, root)
+  if not output then
+    -- git grep exits with status 1 when there are no matches.
+    return {}
+  end
+  local prefix = event.hash .. ":"
+  local paths = {}
+  for _, value in ipairs(vim.split(output, "\0", { plain = true, trimempty = true })) do
+    if value:sub(1, #prefix) == prefix then
+      value = value:sub(#prefix + 1)
+    end
+    paths[#paths + 1] = value
+  end
+  return paths
+end
+
 function M.changes(root, event)
   if event.parent == "" then
     if event.sequence == 0 then
