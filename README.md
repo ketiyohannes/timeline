@@ -126,6 +126,8 @@ Keys:
 
 Changed files are selected automatically. Added files are green, deleted files are red, and modified files are amber. Deleted files remain visible at their deletion event so their complete previous content can be inspected.
 
+The three panes resize and recenter automatically whenever the Neovim window changes size. When you select a changed file, the Code pane keeps the complete file loaded but scrolls so its first highlighted line is at the top of the viewport. A change beginning at line 300 therefore opens with line 300 visible first.
+
 ## How synchronization works
 
 When Timeline first sees an existing repository, it imports every commit reachable from the current `HEAD` in deterministic parent-before-child order. The root commit is `#001`, and all of its lines are treated as additions.

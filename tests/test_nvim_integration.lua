@@ -14,6 +14,27 @@ assert(marks[1][2] == 1, "expected gamma on the second line")
 assert(marks[1][4].sign_text == "02", "expected event #2 sign")
 
 timeline.open()
+local ui_state = require("codex_timeline.ui")._state
+
+-- All three floating panes must respond to editor resizing and remain within
+-- the available columns.
+vim.o.columns = 180
+vim.o.lines = 60
+vim.cmd.doautocmd("VimResized")
+local wide_changes = vim.api.nvim_win_get_config(ui_state.windows.changes)
+local wide_files = vim.api.nvim_win_get_config(ui_state.windows.files)
+local wide_source = vim.api.nvim_win_get_config(ui_state.windows.source)
+vim.o.columns = 110
+vim.o.lines = 38
+vim.cmd.doautocmd("VimResized")
+local narrow_changes = vim.api.nvim_win_get_config(ui_state.windows.changes)
+local narrow_files = vim.api.nvim_win_get_config(ui_state.windows.files)
+local narrow_source = vim.api.nvim_win_get_config(ui_state.windows.source)
+assert(narrow_changes.width < wide_changes.width, "changes pane did not shrink with the editor")
+assert(narrow_files.width < wide_files.width, "codebase pane did not shrink with the editor")
+assert(narrow_source.width < wide_source.width, "source pane did not shrink with the editor")
+assert(narrow_source.col + narrow_source.width + 2 <= vim.o.columns, "responsive panes overflow the editor")
+
 local roles = {}
 for _, buffer in ipairs(vim.api.nvim_list_bufs()) do
   local role = vim.b[buffer].codex_timeline_role
@@ -40,7 +61,7 @@ local changed_file_marks = vim.api.nvim_buf_get_extmarks(
   -1,
   { details = true }
 )
-assert(#changed_file_marks == 3, "all files touched by the event should be highlighted")
+assert(#changed_file_marks == 4, "all files touched by the event should be highlighted")
 local file_groups = {}
 for _, mark in ipairs(changed_file_marks) do
   file_groups[mark[4].line_hl_group] = true
@@ -49,13 +70,14 @@ assert(file_groups.CodexTimelineAddFile, "added files should use the stronger ad
 assert(file_groups.CodexTimelineDeleteFile, "deleted files should use the stronger delete highlight")
 assert(file_groups.CodexTimelineChangeFile, "modified files should use the stronger change highlight")
 
-local ui_state = require("codex_timeline.ui")._state
 local file_lines = vim.api.nvim_buf_get_lines(roles.files, 0, -1, false)
-local example_row
+local example_row, deep_row
 for index, path in ipairs(file_lines) do
   if path == "example.txt" then example_row = index end
+  if path == "deep.txt" then deep_row = index end
 end
 assert(example_row, "example file is missing")
+assert(deep_row, "deep file is missing")
 vim.api.nvim_set_current_win(ui_state.windows.files)
 vim.api.nvim_win_set_cursor(ui_state.windows.files, { example_row, 0 })
 vim.cmd.doautocmd("CursorMoved")
@@ -78,6 +100,19 @@ assert(source_marks[1][4].line_hl_group == "CodexTimelineDeleteLine", "removed l
 assert(source_marks[1][4].sign_hl_group == "CodexTimelineDeleteSign", "removed sign highlight is not bold")
 assert(source_marks[2][4].line_hl_group == "CodexTimelineAddLine", "added line highlight is not theme-aware")
 assert(source_marks[2][4].sign_hl_group == "CodexTimelineAddSign", "added sign highlight is not bold")
+
+-- Moving to a file with a deep change keeps the complete file but starts the
+-- source viewport at the first highlighted line.
+vim.api.nvim_win_set_cursor(ui_state.windows.files, { deep_row, 0 })
+vim.cmd.doautocmd("CursorMoved")
+local deep_lines = vim.api.nvim_buf_get_lines(roles.source, 0, -1, false)
+assert(#deep_lines > 400, "deep file was reduced to a diff instead of retaining full context")
+assert(deep_lines[300] == "line 300" and deep_lines[301] == "changed line 300", "deep replacement is misplaced")
+local deep_topline = vim.api.nvim_win_call(ui_state.windows.source, function()
+  return vim.fn.line("w0")
+end)
+assert(deep_topline == 300, "source viewport did not start at the first highlighted line")
+assert(vim.api.nvim_win_get_cursor(ui_state.windows.source)[1] == 300, "source cursor did not jump to the change")
 
 -- Moving backward reconstructs the full earlier codebase and its event-local
 -- highlights rather than showing the latest worktree or a raw patch.

@@ -11,6 +11,7 @@ local state = {
   root = nil,
   ref = nil,
   event = nil,
+  augroup = nil,
 }
 
 local function valid_window(window)
@@ -21,6 +22,10 @@ local function close()
   local windows = state.windows
   state.windows = {}
   state.buffers = {}
+  if state.augroup then
+    pcall(vim.api.nvim_del_augroup_by_id, state.augroup)
+    state.augroup = nil
+  end
   for _, window in pairs(windows) do
     if valid_window(window) then
       vim.api.nvim_win_close(window, true)
@@ -29,28 +34,45 @@ local function close()
 end
 
 local function dimensions()
-  local columns = vim.o.columns
-  local rows = vim.o.lines - vim.o.cmdheight
-  local width = math.max(74, math.floor(columns * 0.96))
-  local height = math.max(14, math.floor(rows * 0.88))
-  width = math.min(width, columns - 2)
-  height = math.min(height, rows - 2)
-
-  local changes_width = math.max(24, math.floor(width * 0.23))
-  local files_width = math.max(25, math.floor(width * 0.25))
-  if changes_width + files_width > width - 30 then
-    changes_width = math.max(18, math.floor(width * 0.25))
-    files_width = math.max(20, math.floor(width * 0.28))
-  end
+  local columns = math.max(vim.o.columns, 9)
+  local rows = math.max(vim.o.lines - vim.o.cmdheight, 4)
+  local outer_width = math.min(columns, math.max(9, math.floor(columns * 0.96)))
+  local outer_height = math.min(rows, math.max(4, math.floor(rows * 0.88)))
+  local content_width = outer_width - 6 -- three pairs of vertical borders
+  local changes_width = math.max(1, math.floor(content_width * 0.22))
+  local files_width = math.max(1, math.floor(content_width * 0.25))
+  local source_width = math.max(1, content_width - changes_width - files_width)
   return {
-    row = math.floor((rows - height) / 2),
-    col = math.floor((columns - width) / 2),
-    width = width,
-    height = height,
+    row = math.max(0, math.floor((rows - outer_height) / 2)),
+    col = math.max(0, math.floor((columns - outer_width) / 2)),
+    width = outer_width,
+    height = outer_height - 2,
     changes_width = changes_width,
     files_width = files_width,
-    source_width = width - changes_width - files_width - 4,
+    source_width = source_width,
   }
+end
+
+local function apply_layout()
+  if not valid_window(state.windows.changes)
+    or not valid_window(state.windows.files)
+    or not valid_window(state.windows.source) then
+    return
+  end
+
+  local size = dimensions()
+  vim.api.nvim_win_set_config(state.windows.changes, {
+    relative = "editor", row = size.row, col = size.col,
+    width = size.changes_width, height = size.height,
+  })
+  vim.api.nvim_win_set_config(state.windows.files, {
+    relative = "editor", row = size.row, col = size.col + size.changes_width + 2,
+    width = size.files_width, height = size.height,
+  })
+  vim.api.nvim_win_set_config(state.windows.source, {
+    relative = "editor", row = size.row, col = size.col + size.changes_width + size.files_width + 4,
+    width = size.source_width, height = size.height,
+  })
 end
 
 local function set_lines(buffer, lines)
@@ -111,7 +133,12 @@ local function render_source()
       title = source_title(event),
       title_pos = "center",
     })
-    vim.api.nvim_win_set_cursor(state.windows.source, { 1, 0 })
+    local first_changed_line = highlights and highlights[1] and highlights[1].line or 1
+    first_changed_line = math.max(1, math.min(first_changed_line, #lines))
+    vim.api.nvim_win_set_cursor(state.windows.source, { first_changed_line, 0 })
+    vim.api.nvim_win_call(state.windows.source, function()
+      vim.cmd("normal! zt")
+    end)
   end
 end
 
@@ -280,9 +307,20 @@ function M.open(opts)
     "FloatTitle:CodexTimelineTitle",
   }, ",")
 
-  vim.api.nvim_create_autocmd("CursorMoved", { buffer = state.buffers.changes, callback = render_event })
-  vim.api.nvim_create_autocmd("CursorMoved", { buffer = state.buffers.files, callback = render_source })
-  vim.api.nvim_create_autocmd("BufWipeout", { buffer = state.buffers.changes, once = true, callback = close })
+  state.augroup = vim.api.nvim_create_augroup("TimelineUI", { clear = true })
+  vim.api.nvim_create_autocmd("CursorMoved", {
+    group = state.augroup, buffer = state.buffers.changes, callback = render_event,
+  })
+  vim.api.nvim_create_autocmd("CursorMoved", {
+    group = state.augroup, buffer = state.buffers.files, callback = render_source,
+  })
+  vim.api.nvim_create_autocmd("VimResized", {
+    group = state.augroup,
+    callback = apply_layout,
+  })
+  vim.api.nvim_create_autocmd("BufWipeout", {
+    group = state.augroup, buffer = state.buffers.changes, once = true, callback = close,
+  })
 
   map_all("q", close, "Close Timeline")
   map_all("<Esc>", close, "Close Timeline")
@@ -333,6 +371,7 @@ function M.select_session(callback)
 end
 
 M.close = close
+M.resize = apply_layout
 M._state = state
 
 return M
