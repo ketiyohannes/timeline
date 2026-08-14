@@ -19,9 +19,11 @@ COMMANDS                                                  *timeline-commands*
     Press <CR> to move right, 1/2/3 to focus a pane, [c and ]c to traverse
     events, r to refresh, and q or <Esc> to close. Press / from any pane to
     search commit messages or change numbers, then n or N to move through
-    matching commits. See |timeline-search|. The panes resize with the editor.
-    Selecting a changed file scrolls its complete source snapshot so the first
-    highlighted line is at the top of the Code pane.
+    matching commits. See |timeline-search|. Press F to search paths in the
+    selected commit and [f or ]f to move through file matches. See
+    |timeline-file-search|. The panes resize with the editor. Selecting a
+    changed file scrolls its complete source snapshot so its first highlighted
+    line is at the top of the Code pane.
 
 :TimelineSync
     Import the current HEAD's reachable commit history, then capture modified
@@ -69,8 +71,31 @@ with the event-local additions and removals highlighted.
 
 Submit an empty query to clear the search and highlights. When no commit
 matches, the current event remains selected and the Changes title displays
-"no matches". Search does not inspect file contents, paths, timestamps, or
-commit hashes.
+"no matches". Commit search does not inspect file contents, paths, timestamps,
+or commit hashes. Use |timeline-file-search| to search snapshot paths.
+
+==============================================================================
+FILE SEARCH                                          *timeline-file-search*
+
+Press F from any Timeline pane to search the complete file tree at the selected
+commit. The prompt includes the active change number, for example:
+>
+    Search files in #012: src/api
+<
+Queries are case-insensitive literal matches against complete
+repository-relative paths. The first result at or after the currently selected
+file opens immediately. All results are highlighted in Codebase, whose title
+displays the count. Press ]f for the next match or [f for the previous match
+from any pane. Navigation wraps at the beginning and end.
+
+Search uses the historical snapshot, not the current working directory. It
+includes unchanged files, plus a deleted file at its deletion event. Opening a
+result displays the complete historical file in Code with event-local changes
+highlighted.
+
+Submit an empty query to clear file search. Changing commits also clears it so
+paths from one filesystem snapshot never leak into another. File search matches
+paths only; it does not inspect file contents.
 
 ==============================================================================
 SETUP                                                        *timeline-setup*

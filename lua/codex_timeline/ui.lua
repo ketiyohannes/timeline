@@ -3,6 +3,7 @@ local git = require("codex_timeline.git")
 local M = {}
 local namespace = vim.api.nvim_create_namespace("codex_timeline_snapshot")
 local search_namespace = vim.api.nvim_create_namespace("timeline_search")
+local file_search_namespace = vim.api.nvim_create_namespace("timeline_file_search")
 local state = {
   windows = {},
   buffers = {},
@@ -14,6 +15,7 @@ local state = {
   event = nil,
   augroup = nil,
   search = { query = "", matches = {}, index = 0 },
+  file_search = { query = "", matches = {}, index = 0 },
 }
 
 local function valid_window(window)
@@ -25,6 +27,8 @@ local function close()
   state.windows = {}
   state.buffers = {}
   state.search = { query = "", matches = {}, index = 0 }
+  state.file_search = { query = "", matches = {}, index = 0 }
+  state.event = nil
   if state.augroup then
     pcall(vim.api.nvim_del_augroup_by_id, state.augroup)
     state.augroup = nil
@@ -160,12 +164,129 @@ local function file_highlight(change)
   return "CodexTimelineChangeFile"
 end
 
+local function file_search_title()
+  if state.file_search.query == "" then
+    return " Codebase "
+  end
+  local count = #state.file_search.matches
+  if count == 0 then
+    return " Codebase · no matches "
+  end
+  return string.format(" Codebase · %d %s ", count, count == 1 and "match" or "matches")
+end
+
+local function render_file_search()
+  local buffer = state.buffers.files
+  if not buffer or not vim.api.nvim_buf_is_valid(buffer) then
+    return
+  end
+
+  vim.api.nvim_buf_clear_namespace(buffer, file_search_namespace, 0, -1)
+  for match_index, row in ipairs(state.file_search.matches) do
+    vim.api.nvim_buf_set_extmark(buffer, file_search_namespace, row - 1, 0, {
+      line_hl_group = match_index == state.file_search.index and "TimelineSearchCurrent" or "TimelineSearchMatch",
+      priority = match_index == state.file_search.index and 80 or 60,
+    })
+  end
+
+  if valid_window(state.windows.files) then
+    vim.api.nvim_win_set_config(state.windows.files, {
+      title = file_search_title(),
+      title_pos = "center",
+    })
+  end
+end
+
+local function select_file_match(index)
+  local matches = state.file_search.matches
+  if #matches == 0 or not valid_window(state.windows.files) then
+    return
+  end
+  state.file_search.index = ((index - 1) % #matches) + 1
+  vim.api.nvim_win_set_cursor(state.windows.files, { matches[state.file_search.index], 0 })
+  render_file_search()
+  render_source()
+end
+
+local function sync_file_search_to_cursor()
+  if #state.file_search.matches == 0 or not valid_window(state.windows.files) then
+    return
+  end
+  local row = vim.api.nvim_win_get_cursor(state.windows.files)[1]
+  for index, match_row in ipairs(state.file_search.matches) do
+    if match_row == row then
+      state.file_search.index = index
+      render_file_search()
+      return
+    end
+  end
+end
+
+function M.search_files(query)
+  if query == nil then
+    local marker = state.event and event_marker(state.event) or "current commit"
+    vim.ui.input({
+      prompt = string.format("Search files in %s: ", marker),
+      default = state.file_search.query,
+    }, function(input)
+      if input ~= nil then
+        M.search_files(input)
+      end
+    end)
+    return
+  end
+
+  query = vim.trim(query)
+  state.file_search = { query = query, matches = {}, index = 0 }
+  if query == "" then
+    render_file_search()
+    return
+  end
+
+  local needle = query:lower()
+  for row, path in ipairs(state.files) do
+    if path:lower():find(needle, 1, true) then
+      state.file_search.matches[#state.file_search.matches + 1] = row
+    end
+  end
+
+  if #state.file_search.matches == 0 then
+    render_file_search()
+    local marker = state.event and event_marker(state.event) or "current commit"
+    vim.notify(string.format('Timeline: no files match "%s" in %s', query, marker), vim.log.levels.INFO)
+    return
+  end
+
+  local current_row = valid_window(state.windows.files)
+      and vim.api.nvim_win_get_cursor(state.windows.files)[1]
+    or 1
+  local selected = 1
+  for index, row in ipairs(state.file_search.matches) do
+    if row >= current_row then
+      selected = index
+      break
+    end
+  end
+  select_file_match(selected)
+end
+
+function M.next_file_match(direction)
+  if #state.file_search.matches == 0 then
+    return
+  end
+  select_file_match(state.file_search.index + (direction or 1))
+end
+
 local function render_event()
   local event = current_event()
   if not event then
     return
   end
+  local event_changed = state.event ~= event
   state.event = event
+  if event_changed then
+    state.file_search = { query = "", matches = {}, index = 0 }
+  end
 
   local files, tree_err = git.tree(state.root, event)
   local changes, changes_err = git.changes(state.root, event)
@@ -194,6 +315,7 @@ local function render_event()
       })
     end
   end
+  render_file_search()
 
   local selected = 1
   for index, path in ipairs(files) do
@@ -361,6 +483,7 @@ function M.open(opts)
 
   state.root, state.ref, state.events = root, ref, events
   state.search = { query = "", matches = {}, index = 0 }
+  state.file_search = { query = "", matches = {}, index = 0 }
   local size = dimensions()
   for _, role in ipairs({ "changes", "files", "source" }) do
     state.buffers[role] = vim.api.nvim_create_buf(false, true)
@@ -430,7 +553,10 @@ function M.open(opts)
     end,
   })
   vim.api.nvim_create_autocmd("CursorMoved", {
-    group = state.augroup, buffer = state.buffers.files, callback = render_source,
+    group = state.augroup, buffer = state.buffers.files, callback = function()
+      sync_file_search_to_cursor()
+      render_source()
+    end,
   })
   vim.api.nvim_create_autocmd("VimResized", {
     group = state.augroup,
@@ -447,6 +573,9 @@ function M.open(opts)
   map_all("/", function() M.search() end, "Search commits")
   map_all("n", function() M.next_match(1) end, "Next commit search match")
   map_all("N", function() M.next_match(-1) end, "Previous commit search match")
+  map_all("F", function() M.search_files() end, "Search files in selected commit")
+  map_all("[f", function() M.next_file_match(-1) end, "Previous file search match")
+  map_all("]f", function() M.next_file_match(1) end, "Next file search match")
   map_all("1", function() focus("changes") end, "Focus recorded changes")
   map_all("2", function() focus("files") end, "Focus snapshot codebase")
   map_all("3", function() focus("source") end, "Focus snapshot source")

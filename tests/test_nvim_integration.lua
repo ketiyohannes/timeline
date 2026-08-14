@@ -53,6 +53,16 @@ assert(not change_text:find("[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-
 -- Commit search accepts both change numbers and message fragments, highlights
 -- every result, and wraps in both directions.
 local ui = require("codex_timeline.ui")
+local function window_title(window)
+  local title = vim.api.nvim_win_get_config(window).title
+  if type(title) == "table" then
+    local parts = {}
+    for _, part in ipairs(title) do parts[#parts + 1] = type(part) == "table" and part[1] or part end
+    return table.concat(parts)
+  end
+  return title
+end
+
 ui.search("#002")
 assert(ui_state.search.query == "#002", "search query was not retained")
 assert(#ui_state.search.matches == 1, "change-number search should find exactly one commit")
@@ -61,12 +71,7 @@ local search_namespace = vim.api.nvim_get_namespaces().timeline_search
 local search_marks = vim.api.nvim_buf_get_extmarks(roles.changes, search_namespace, 0, -1, { details = true })
 assert(#search_marks == 1, "search result was not highlighted")
 assert(search_marks[1][4].line_hl_group == "TimelineSearchCurrent", "selected search result is not distinct")
-local search_title = vim.api.nvim_win_get_config(ui_state.windows.changes).title
-if type(search_title) == "table" then
-  local parts = {}
-  for _, part in ipairs(search_title) do parts[#parts + 1] = type(part) == "table" and part[1] or part end
-  search_title = table.concat(parts)
-end
+local search_title = window_title(ui_state.windows.changes)
 assert(search_title:find("1 match", 1, true), "changes title does not show the search result count")
 
 ui.search("a")
@@ -79,6 +84,36 @@ assert(vim.api.nvim_win_get_cursor(ui_state.windows.changes)[1] == 3, "previous 
 ui.search("")
 assert(ui_state.search.query == "" and #ui_state.search.matches == 0, "empty search did not clear results")
 assert(#vim.api.nvim_buf_get_extmarks(roles.changes, search_namespace, 0, -1, {}) == 0, "cleared search left highlights")
+
+-- File search is scoped to the selected commit and opens each result from the
+-- historical tree rather than the current worktree.
+ui.search_files("deep")
+assert(ui_state.file_search.query == "deep", "file search query was not retained")
+assert(#ui_state.file_search.matches == 1, "file search should find one deep file")
+assert(vim.b[roles.source].codex_timeline_path == "deep.txt", "file search did not open its historical result")
+local file_search_namespace = vim.api.nvim_get_namespaces().timeline_file_search
+local file_search_marks = vim.api.nvim_buf_get_extmarks(
+  roles.files,
+  file_search_namespace,
+  0,
+  -1,
+  { details = true }
+)
+assert(#file_search_marks == 1, "file search result was not highlighted")
+assert(file_search_marks[1][4].line_hl_group == "TimelineSearchCurrent", "selected file result is not distinct")
+assert(window_title(ui_state.windows.files):find("1 match", 1, true), "codebase title lacks file result count")
+
+ui.search_files(".txt")
+assert(#ui_state.file_search.matches == 4, "file search did not cover the complete snapshot tree")
+ui.next_file_match(1)
+ui.next_file_match(1)
+ui.next_file_match(1)
+assert(vim.api.nvim_win_get_cursor(ui_state.windows.files)[1] == 1, "next file match did not wrap")
+ui.next_file_match(-1)
+assert(vim.api.nvim_win_get_cursor(ui_state.windows.files)[1] == 4, "previous file match did not wrap")
+ui.search_files("")
+assert(ui_state.file_search.query == "" and #ui_state.file_search.matches == 0, "empty file search did not clear")
+assert(#vim.api.nvim_buf_get_extmarks(roles.files, file_search_namespace, 0, -1, {}) == 0, "file search highlights remain")
 
 local file_text = table.concat(vim.api.nvim_buf_get_lines(roles.files, 0, -1, false), "\n")
 assert(file_text:find("example.txt", 1, true), "changed file is missing from snapshot codebase")
@@ -147,8 +182,11 @@ assert(vim.api.nvim_win_get_cursor(ui_state.windows.source)[1] == 300, "source c
 -- Moving backward reconstructs the full earlier codebase and its event-local
 -- highlights rather than showing the latest worktree or a raw patch.
 vim.api.nvim_set_current_win(ui_state.windows.changes)
+ui.search_files("added.txt")
 vim.api.nvim_win_set_cursor(ui_state.windows.changes, { 2, 0 })
 vim.cmd.doautocmd("CursorMoved")
+assert(ui_state.file_search.query == "", "file search was not cleared when the selected commit changed")
+assert(window_title(ui_state.windows.files) == " Codebase ", "codebase title retained a stale commit search")
 local earlier_files = table.concat(vim.api.nvim_buf_get_lines(roles.files, 0, -1, false), "\n")
 assert(earlier_files:find("unchanged.txt", 1, true), "earlier snapshot lost an unchanged file")
 assert(not earlier_files:find("added.txt", 1, true), "earlier snapshot leaked a future file")

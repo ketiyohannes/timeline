@@ -123,6 +123,8 @@ Keys:
 | `[c` / `]c` | Select the previous or next event from any pane |
 | `/` | Search commit messages or change numbers such as `#012` |
 | `n` / `N` | Jump to the next or previous search match |
+| `F` | Search file paths in the selected commit |
+| `[f` / `]f` | Jump to the previous or next file match |
 | `r` | Refresh the browser |
 | `q` / `Esc` | Close the browser |
 
@@ -144,7 +146,23 @@ The first match at or after the currently selected commit is opened immediately.
 
 Selecting a search result reconstructs that event across the entire browser. Codebase shows every file that existed then, while Code opens the first changed file with its highlighted change at the top. The full file remains available for normal scrolling.
 
-Run `/` and submit an empty value to clear the query and its highlights. A query with no results leaves the current event selected and shows `no matches` in the Changes title. Search covers change numbers and messages only; it does not search file contents, paths, timestamps, or commit hashes.
+Run `/` and submit an empty value to clear the query and its highlights. A query with no results leaves the current event selected and shows `no matches` in the Changes title. Commit search covers change numbers and messages only; use `F` to search paths in the selected snapshot. It does not search file contents, timestamps, or commit hashes.
+
+### Searching files in a commit
+
+Press `F` from any pane to search the complete file tree at the selected commit. The prompt includes the active change number, such as `Search files in #012:`, so it is always clear which historical snapshot is being searched.
+
+The query is a case-insensitive plain-text match against complete repository-relative paths. For example:
+
+- `auth` finds every path containing `auth`.
+- `src/api` limits matches to that directory.
+- `.lua` finds Lua files anywhere in the snapshot.
+
+The first match at or after the currently selected file opens immediately in Code. Every result is highlighted in Codebase, whose title displays the match count. Use `]f` and `[f` from any pane to move forward and backward with wraparound.
+
+File search uses the historical tree, not the current working directory. Files unchanged at that commit remain searchable, and a deleted file remains searchable at its deletion event because Timeline preserves its previous contents for inspection. Selecting a result shows the complete file as it existed then, including any event-local addition or removal highlights.
+
+Press `F` and submit an empty value to clear the file query. Switching to another commit clears it automatically because that commit can have a different filesystem. File search matches paths only, not file contents.
 
 ## How synchronization works
 
