@@ -128,9 +128,23 @@ Keys:
 
 Changed files are selected automatically. Added files are green, deleted files are red, and modified files are amber. Deleted files remain visible at their deletion event so their complete previous content can be inspected.
 
-Search is case-insensitive and available from every pane. Matching commits are highlighted in Changes, the pane title shows the result count, and navigation wraps at either end. Submit an empty search to clear it.
-
 The three panes resize and recenter automatically whenever the Neovim window changes size. When you select a changed file, the Code pane keeps the complete file loaded but scrolls so its first highlighted line is at the top of the viewport. A change beginning at line 300 therefore opens with line 300 visible first.
+
+### Searching commits
+
+Press `/` from any pane to open the `Search commits:` prompt. Search is case-insensitive and performs a plain-text match against each visible change number and commit message.
+
+Examples:
+
+- `auth` finds messages such as `add authentication` and `fix AUTH redirect`.
+- `#012` jumps directly to change 12.
+- `base` finds the imported baseline event.
+
+The first match at or after the currently selected commit is opened immediately. Every match is highlighted in the Changes pane, and its title shows the number of results. Press `n` or `N` from any pane to move forward or backward; navigation wraps when it reaches either end.
+
+Selecting a search result reconstructs that event across the entire browser. Codebase shows every file that existed then, while Code opens the first changed file with its highlighted change at the top. The full file remains available for normal scrolling.
+
+Run `/` and submit an empty value to clear the query and its highlights. A query with no results leaves the current event selected and shows `no matches` in the Changes title. Search covers change numbers and messages only; it does not search file contents, paths, timestamps, or commit hashes.
 
 ## How synchronization works
 

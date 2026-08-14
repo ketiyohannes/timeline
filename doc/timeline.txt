@@ -19,9 +19,9 @@ COMMANDS                                                  *timeline-commands*
     Press <CR> to move right, 1/2/3 to focus a pane, [c and ]c to traverse
     events, r to refresh, and q or <Esc> to close. Press / from any pane to
     search commit messages or change numbers, then n or N to move through
-    matching commits. An empty search clears the matches. The panes resize
-    with the editor. Selecting a changed file scrolls its complete source
-    snapshot so the first highlighted line is at the top of the Code pane.
+    matching commits. See |timeline-search|. The panes resize with the editor.
+    Selecting a changed file scrolls its complete source snapshot so the first
+    highlighted line is at the top of the Code pane.
 
 :TimelineSync
     Import the current HEAD's reachable commit history, then capture modified
@@ -46,6 +46,31 @@ COMMANDS                                                  *timeline-commands*
 
 ]t / [t
     Jump to the next or previous annotated line.
+
+==============================================================================
+COMMIT SEARCH                                             *timeline-search*
+
+Press / from any Timeline pane to open the "Search commits:" prompt. The query
+is case-insensitive and matched literally against the visible change number and
+commit message. For example:
+>
+    auth
+    #012
+    base
+<
+The first match at or after the current event opens immediately. All matches
+are highlighted in Changes, whose title displays the result count. Press n for
+the next match or N for the previous match from any pane. Navigation wraps at
+the beginning and end of the results.
+
+Opening a result reconstructs the complete codebase at that event. Codebase
+contains every file that existed then, and Code displays the selected full file
+with the event-local additions and removals highlighted.
+
+Submit an empty query to clear the search and highlights. When no commit
+matches, the current event remains selected and the Changes title displays
+"no matches". Search does not inspect file contents, paths, timestamps, or
+commit hashes.
 
 ==============================================================================
 SETUP                                                        *timeline-setup*
