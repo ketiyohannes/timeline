@@ -189,6 +189,73 @@ assert(
   source_lines[1] == "alpha" and source_lines[2] == "beta" and source_lines[3] == "gamma",
   "source pane did not interleave the complete file with its removed and added lines"
 )
+
+-- Code search uses its own responsive bar, highlights matches in place, and
+-- keeps every nonmatching source line available for context.
+local source_before_search = vim.api.nvim_win_get_config(ui_state.windows.source)
+ui.toggle_search_bar("code")
+local code_bar = assert(ui_state.search_bars.code, "code search bar did not open")
+local code_bar_config = vim.api.nvim_win_get_config(code_bar.window)
+local source_with_search = vim.api.nvim_win_get_config(ui_state.windows.source)
+assert(code_bar_config.relative == "editor", "code search is not an in-browser floating bar")
+assert(source_with_search.row > code_bar_config.row, "source did not move below its search bar")
+assert(source_with_search.height < source_before_search.height, "source pane did not make room for code search")
+vim.o.columns = 150
+vim.cmd.doautocmd("VimResized")
+local wide_code_bar = vim.api.nvim_win_get_config(code_bar.window)
+vim.o.columns = 110
+vim.cmd.doautocmd("VimResized")
+local narrow_code_bar = vim.api.nvim_win_get_config(code_bar.window)
+assert(narrow_code_bar.width < wide_code_bar.width, "code search bar did not resize with the browser")
+
+vim.api.nvim_buf_set_lines(code_bar.buffer, 0, -1, false, { "gamma" })
+vim.cmd.doautocmd("TextChangedI")
+assert(ui_state.code_search.query == "gamma", "code search query was not retained")
+assert(#ui_state.code_search.matches == 1, "code search should find gamma once")
+assert(vim.api.nvim_win_get_cursor(ui_state.windows.source)[1] == 3, "code search did not jump to gamma")
+assert(#vim.api.nvim_buf_get_lines(roles.source, 0, -1, false) == 3, "code search removed nonmatching source lines")
+local code_search_namespace = vim.api.nvim_get_namespaces().timeline_code_search
+local code_search_marks = vim.api.nvim_buf_get_extmarks(
+  roles.source,
+  code_search_namespace,
+  0,
+  -1,
+  { details = true }
+)
+assert(#code_search_marks == 1, "code search result was not highlighted")
+assert(code_search_marks[1][4].hl_group == "TimelineCodeSearchCurrent", "current code result is not distinct")
+assert(window_title(code_bar.window):find("1 match", 1, true), "code search bar lacks its result count")
+
+vim.api.nvim_buf_set_lines(code_bar.buffer, 0, -1, false, { "beta" })
+vim.cmd.doautocmd("TextChangedI")
+assert(
+  #ui_state.code_search.matches == 1 and ui_state.code_search.matches[1].line == 2,
+  "code search did not include the event-local removed line"
+)
+
+vim.api.nvim_buf_set_lines(code_bar.buffer, 0, -1, false, { "a" })
+vim.cmd.doautocmd("TextChangedI")
+assert(#ui_state.code_search.matches == 5, "code search did not find every matching occurrence")
+local steps_to_wrap = #ui_state.code_search.matches - ui_state.code_search.index + 1
+for _ = 1, steps_to_wrap do ui.next_code_match(1) end
+assert(vim.api.nvim_win_get_cursor(ui_state.windows.source)[1] == 1, "next code match did not wrap")
+ui.next_code_match(-1)
+assert(vim.api.nvim_win_get_cursor(ui_state.windows.source)[1] == 3, "previous code match did not wrap")
+
+vim.api.nvim_buf_set_lines(code_bar.buffer, 0, -1, false, { ":2" })
+vim.cmd.doautocmd("TextChangedI")
+assert(vim.api.nvim_win_get_cursor(ui_state.windows.source)[1] == 2, "line-number search did not jump to line 2")
+local line_jump_marks = vim.api.nvim_buf_get_extmarks(roles.source, code_search_namespace, 0, -1, { details = true })
+assert(line_jump_marks[1][4].line_hl_group == "TimelineCodeSearchCurrent", "line-number result was not highlighted")
+
+vim.api.nvim_buf_set_lines(code_bar.buffer, 0, -1, false, { "" })
+vim.cmd.doautocmd("TextChangedI")
+assert(ui_state.code_search.query == "" and #ui_state.code_search.matches == 0, "empty code search did not clear")
+assert(#vim.api.nvim_buf_get_extmarks(roles.source, code_search_namespace, 0, -1, {}) == 0, "code highlights remain")
+ui.toggle_search_bar("code")
+assert(ui_state.search_bars.code == nil, "code search bar did not toggle closed")
+assert(vim.api.nvim_win_get_config(ui_state.windows.source).height == source_before_search.height, "source pane did not reclaim space")
+
 local source_text = table.concat(source_lines, "\n")
 assert(not source_text:find("diff %-%-git"), "source pane leaked diff metadata")
 assert(not source_text:find("@@", 1, true), "source pane leaked hunk metadata")
@@ -205,8 +272,14 @@ assert(source_marks[2][4].sign_hl_group == "CodexTimelineAddSign", "added sign h
 
 -- Moving to a file with a deep change keeps the complete file but starts the
 -- source viewport at the first highlighted line.
+ui.search_code("gamma")
+vim.api.nvim_set_current_win(ui_state.windows.files)
 vim.api.nvim_win_set_cursor(ui_state.windows.files, { deep_row, 0 })
 vim.cmd.doautocmd("CursorMoved")
+assert(
+  ui_state.code_search.query == "",
+  "code search was not cleared when the opened file changed: " .. ui_state.code_search.query
+)
 local deep_lines = vim.api.nvim_buf_get_lines(roles.source, 0, -1, false)
 assert(#deep_lines > 400, "deep file was reduced to a diff instead of retaining full context")
 assert(deep_lines[300] == "line 300" and deep_lines[301] == "changed line 300", "deep replacement is misplaced")

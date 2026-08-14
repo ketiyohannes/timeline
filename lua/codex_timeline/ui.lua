@@ -4,6 +4,9 @@ local M = {}
 local namespace = vim.api.nvim_create_namespace("codex_timeline_snapshot")
 local search_namespace = vim.api.nvim_create_namespace("timeline_search")
 local file_search_namespace = vim.api.nvim_create_namespace("timeline_file_search")
+local code_search_namespace = vim.api.nvim_create_namespace("timeline_code_search")
+local update_search_bar
+local render_code_search
 local state = {
   windows = {},
   buffers = {},
@@ -18,6 +21,7 @@ local state = {
   augroup = nil,
   search = { query = "", matches = {}, index = 0 },
   file_search = { query = "", matches = {}, index = 0 },
+  code_search = { query = "", matches = {}, index = 0 },
   search_bars = {},
 }
 
@@ -35,6 +39,7 @@ local function close()
   state.visible_files = {}
   state.search = { query = "", matches = {}, index = 0 }
   state.file_search = { query = "", matches = {}, index = 0 }
+  state.code_search = { query = "", matches = {}, index = 0 }
   state.event = nil
   if state.augroup then
     pcall(vim.api.nvim_del_augroup_by_id, state.augroup)
@@ -95,6 +100,7 @@ local function apply_layout()
   local size = dimensions()
   local changes_offset = pane_offset("commits", size.height)
   local files_offset = pane_offset("files", size.height)
+  local source_offset = pane_offset("code", size.height)
   vim.api.nvim_win_set_config(state.windows.changes, {
     relative = "editor", row = size.row + changes_offset, col = size.col,
     width = size.changes_width, height = math.max(1, size.height - changes_offset),
@@ -104,8 +110,9 @@ local function apply_layout()
     width = size.files_width, height = math.max(1, size.height - files_offset),
   })
   vim.api.nvim_win_set_config(state.windows.source, {
-    relative = "editor", row = size.row, col = size.col + size.changes_width + size.files_width + 4,
-    width = size.source_width, height = size.height,
+    relative = "editor", row = size.row + source_offset,
+    col = size.col + size.changes_width + size.files_width + 4,
+    width = size.source_width, height = math.max(1, size.height - source_offset),
   })
 
   local commit_bar = state.search_bars.commits
@@ -120,6 +127,14 @@ local function apply_layout()
     vim.api.nvim_win_set_config(file_bar.window, {
       relative = "editor", row = size.row, col = size.col + size.changes_width + 2,
       width = size.files_width, height = 1,
+    })
+  end
+  local code_bar = state.search_bars.code
+  if code_bar and valid_window(code_bar.window) then
+    vim.api.nvim_win_set_config(code_bar.window, {
+      relative = "editor", row = size.row,
+      col = size.col + size.changes_width + size.files_width + 4,
+      width = size.source_width, height = 1,
     })
   end
 end
@@ -166,7 +181,15 @@ local function render_source()
   end
 
   local buffer = state.buffers.source
+  local previous_path = vim.b[buffer].codex_timeline_path
+  if previous_path and previous_path ~= path then
+    state.code_search = { query = "", matches = {}, index = 0 }
+    if update_search_bar then
+      update_search_bar("code", "")
+    end
+  end
   vim.api.nvim_buf_clear_namespace(buffer, namespace, 0, -1)
+  vim.api.nvim_buf_clear_namespace(buffer, code_search_namespace, 0, -1)
   set_lines(buffer, lines)
   vim.b[buffer].codex_timeline_path = path
   vim.bo[buffer].filetype = vim.filetype.match({ filename = path }) or ""
@@ -193,6 +216,9 @@ local function render_source()
     vim.api.nvim_win_call(state.windows.source, function()
       vim.cmd("normal! zt")
     end)
+    if state.code_search.query ~= "" and render_code_search then
+      render_code_search(true)
+    end
   end
 end
 
@@ -207,8 +233,6 @@ local function file_highlight(change)
   end
   return "CodexTimelineChangeFile"
 end
-
-local update_search_bar
 
 local function match_title(label, query, count)
   if query == "" then
@@ -228,6 +252,101 @@ local function render_match_highlights(buffer, search_ns, count, current)
       priority = index == current and 80 or 60,
     })
   end
+end
+
+render_code_search = function(jump)
+  local buffer = state.buffers.source
+  if not buffer or not vim.api.nvim_buf_is_valid(buffer) then
+    return
+  end
+  vim.api.nvim_buf_clear_namespace(buffer, code_search_namespace, 0, -1)
+  for index, match in ipairs(state.code_search.matches) do
+    local group = index == state.code_search.index and "TimelineCodeSearchCurrent" or "TimelineCodeSearchMatch"
+    local options = { priority = index == state.code_search.index and 170 or 150 }
+    if match.line_only then
+      options.line_hl_group = group
+    else
+      options.end_col = match.end_col
+      options.hl_group = group
+    end
+    vim.api.nvim_buf_set_extmark(buffer, code_search_namespace, match.line - 1, match.start_col, options)
+  end
+  if update_search_bar then
+    update_search_bar("code", state.code_search.query)
+  end
+
+  local match = state.code_search.matches[state.code_search.index]
+  if jump and match and valid_window(state.windows.source) then
+    vim.api.nvim_win_set_cursor(state.windows.source, { match.line, match.start_col })
+    vim.api.nvim_win_call(state.windows.source, function()
+      vim.cmd("normal! zz")
+    end)
+  end
+end
+
+function M.search_code(query)
+  if query == nil then
+    M.toggle_search_bar("code")
+    return
+  end
+  query = vim.trim(query)
+  local buffer = state.buffers.source
+  if not buffer or not vim.api.nvim_buf_is_valid(buffer) then
+    return
+  end
+
+  local cursor = valid_window(state.windows.source)
+      and vim.api.nvim_win_get_cursor(state.windows.source)
+    or { 1, 0 }
+  local lines = vim.api.nvim_buf_get_lines(buffer, 0, -1, false)
+  local matches = {}
+  local requested_line = query:match("^:(%d+)$")
+  if requested_line then
+    requested_line = tonumber(requested_line)
+    if requested_line >= 1 and requested_line <= #lines then
+      matches[1] = { line = requested_line, start_col = 0, line_only = true }
+    end
+  elseif query ~= "" then
+    local needle = query:lower()
+    for line_number, line in ipairs(lines) do
+      local searchable = line:lower()
+      local from = 1
+      while true do
+        local start_index, end_index = searchable:find(needle, from, true)
+        if not start_index then
+          break
+        end
+        matches[#matches + 1] = {
+          line = line_number,
+          start_col = start_index - 1,
+          end_col = end_index,
+        }
+        from = end_index + 1
+      end
+    end
+  end
+
+  local selected = 0
+  if #matches > 0 then
+    selected = 1
+    for index, match in ipairs(matches) do
+      if match.line > cursor[1] or (match.line == cursor[1] and match.start_col >= cursor[2]) then
+        selected = index
+        break
+      end
+    end
+  end
+  state.code_search = { query = query, matches = matches, index = selected }
+  render_code_search(query ~= "" and #matches > 0)
+end
+
+function M.next_code_match(direction)
+  local count = #state.code_search.matches
+  if state.code_search.query == "" or count == 0 then
+    return
+  end
+  state.code_search.index = ((state.code_search.index - 1 + (direction or 1)) % count) + 1
+  render_code_search(true)
 end
 
 local function render_files(preferred_path)
@@ -356,8 +475,10 @@ local function render_event()
   state.event = event
   if event_changed then
     state.file_search = { query = "", matches = {}, index = 0 }
+    state.code_search = { query = "", matches = {}, index = 0 }
     if update_search_bar then
       update_search_bar("files", "")
+      update_search_bar("code", "")
     end
   end
 
@@ -533,12 +654,14 @@ local function close_search_bar(role)
     vim.api.nvim_win_close(bar.window, true)
   end
   apply_layout()
-  focus(role == "commits" and "changes" or "files")
+  focus(role == "commits" and "changes" or role == "files" and "files" or "source")
 end
 
 local function search_bar_title(role)
   if role == "commits" then
     return " Search commits "
+  elseif role == "code" then
+    return match_title("Search code", state.code_search.query, #state.code_search.matches)
   end
   local marker = state.event and event_marker(state.event) or "current"
   return string.format(" Search files in %s ", marker)
@@ -565,7 +688,7 @@ update_search_bar = function(role, text)
 end
 
 function M.toggle_search_bar(role)
-  if role ~= "commits" and role ~= "files" then
+  if role ~= "commits" and role ~= "files" and role ~= "code" then
     return
   end
   if search_bar_open(role) then
@@ -575,7 +698,19 @@ function M.toggle_search_bar(role)
 
   local size = dimensions()
   local is_commits = role == "commits"
-  local query = is_commits and state.search.query or state.file_search.query
+  local is_files = role == "files"
+  local query = is_commits and state.search.query
+    or is_files and state.file_search.query
+    or state.code_search.query
+  local col = size.col
+  local width = size.changes_width
+  if is_files then
+    col = size.col + size.changes_width + 2
+    width = size.files_width
+  elseif role == "code" then
+    col = size.col + size.changes_width + size.files_width + 4
+    width = size.source_width
+  end
   local buffer = vim.api.nvim_create_buf(false, true)
   vim.bo[buffer].buftype = "nofile"
   vim.bo[buffer].bufhidden = "wipe"
@@ -586,8 +721,8 @@ function M.toggle_search_bar(role)
   local window = vim.api.nvim_open_win(buffer, true, {
     relative = "editor",
     row = size.row,
-    col = is_commits and size.col or size.col + size.changes_width + 2,
-    width = is_commits and size.changes_width or size.files_width,
+    col = col,
+    width = width,
     height = 1,
     style = "minimal",
     border = "rounded",
@@ -614,8 +749,10 @@ function M.toggle_search_bar(role)
       local value = vim.api.nvim_buf_get_lines(buffer, 0, 1, false)[1] or ""
       if is_commits then
         M.search(value)
-      else
+      elseif is_files then
         M.search_files(value)
+      else
+        M.search_code(value)
       end
     end,
   })
@@ -672,6 +809,7 @@ function M.open(opts)
   state.files, state.visible_files = {}, {}
   state.search = { query = "", matches = {}, index = 0 }
   state.file_search = { query = "", matches = {}, index = 0 }
+  state.code_search = { query = "", matches = {}, index = 0 }
   local size = dimensions()
   for _, role in ipairs({ "changes", "files", "source" }) do
     state.buffers[role] = vim.api.nvim_create_buf(false, true)
@@ -766,6 +904,9 @@ function M.open(opts)
   map_all("F", function() M.search_files() end, "Search files in selected commit")
   map_all("[f", function() M.next_file_match(-1) end, "Previous file search match")
   map_all("]f", function() M.next_file_match(1) end, "Next file search match")
+  map_all("C", function() M.search_code() end, "Search code in selected historical file")
+  map_all("[s", function() M.next_code_match(-1) end, "Previous code search match")
+  map_all("]s", function() M.next_code_match(1) end, "Next code search match")
   map_all("1", function() focus("changes") end, "Focus recorded changes")
   map_all("2", function() focus("files") end, "Focus snapshot codebase")
   map_all("3", function() focus("source") end, "Focus snapshot source")

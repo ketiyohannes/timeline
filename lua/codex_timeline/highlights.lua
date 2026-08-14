@@ -50,6 +50,8 @@ function M.apply(overrides)
   set(0, "CodexTimelineVirtualText", { fg = palette.accent_fg, italic = true })
   set(0, "TimelineSearchMatch", { bg = palette.accent_bg, bold = true })
   set(0, "TimelineSearchCurrent", { fg = palette.accent_fg, bg = palette.accent_bg, bold = true, underline = true })
+  set(0, "TimelineCodeSearchMatch", { fg = palette.accent_fg, bg = palette.accent_bg, bold = true })
+  set(0, "TimelineCodeSearchCurrent", { fg = palette.title, bg = palette.accent_bg, bold = true, underline = true })
 end
 
 return M

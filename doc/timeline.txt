@@ -23,9 +23,10 @@ COMMANDS                                                  *timeline-commands*
     search commit messages or change numbers, then n or N to move through
     matching commits. See |timeline-search|. Press F to search paths in the
     selected commit and [f or ]f to move through file matches. See
-    |timeline-file-search|. The panes resize with the editor. Selecting a
-    changed file scrolls its complete source snapshot so its first highlighted
-    line is at the top of the Code pane.
+    |timeline-file-search|. Press C to search the opened historical source and
+    [s or ]s to move through code matches. See |timeline-code-search|. The panes
+    resize with the editor. Selecting a changed file scrolls its complete
+    source snapshot so its first highlighted line is at the top of Code.
 
 :TimelineSync
     Import the current HEAD's reachable commit history, then capture modified
@@ -123,6 +124,31 @@ highlighted.
 Delete all search text to restore the complete snapshot tree. Changing commits
 also clears the filter so paths from one filesystem snapshot never leak into
 another. File search matches paths only; it does not inspect file contents.
+
+==============================================================================
+CODE SEARCH                                           *timeline-code-search*
+
+Press C from any Timeline pane to toggle a dedicated search bar above Code.
+Results update after every keystroke, and the bar title displays the number of
+matching occurrences. Matching is case-insensitive and literal. Examples:
+>
+    refreshSession
+    throw new Error
+    :300
+<
+A query beginning with a colon and containing a number jumps directly to that
+source line. Other queries find function names, variables, imports, messages,
+and arbitrary code fragments.
+
+Code search keeps the complete historical file visible. It highlights matches
+in place rather than removing nonmatching lines, and the current occurrence is
+visually distinct. Event-local removed lines are searchable because Timeline
+interleaves them with additions in the historical source view.
+
+Press <CR> or <Esc> to hide the bar and retain highlights. Use ]s for the next
+occurrence or [s for the previous occurrence from any pane; navigation wraps.
+Delete all query text to clear highlights. Selecting another file or commit
+clears code search so results never leak into a different snapshot.
 
 ==============================================================================
 SETUP                                                        *timeline-setup*

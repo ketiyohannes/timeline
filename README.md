@@ -125,6 +125,8 @@ Keys:
 | `n` / `N` | Jump to the next or previous search match |
 | `F` | Toggle real-time file search for the selected commit |
 | `[f` / `]f` | Jump to the previous or next file match |
+| `C` | Toggle real-time search inside the opened historical file |
+| `[s` / `]s` | Jump to the previous or next code match |
 | `r` | Refresh the browser |
 | `q` / `Esc` | Close the browser |
 
@@ -187,6 +189,20 @@ The selected file is retained while it still matches. Otherwise, the first later
 File search uses the historical tree, not the current working directory. Files unchanged at that commit remain searchable, and a deleted file remains searchable at its deletion event because Timeline preserves its previous contents for inspection. Selecting a result shows the complete file as it existed then, including any event-local addition or removal highlights.
 
 Delete all text in the bar to restore the complete snapshot tree. Switching to another commit clears the path filter automatically because that commit can have a different filesystem. File search matches paths only, not file contents.
+
+### Searching inside code
+
+Press `C` from any pane to open a dedicated search bar above Code. Results update after every keystroke and the bar title reports the number of matching occurrences.
+
+Code search is case-insensitive and matches literal source text. It works well for function names, variables, error messages, imports, and any other line fragment:
+
+- `refreshSession` finds every use of that function.
+- `throw new Error` finds matching error paths.
+- `:300` jumps directly to line 300.
+
+Unlike commit and file search, code search never removes nonmatching lines. The complete historical file stays loaded, each occurrence is highlighted in place, and the active match is visually distinct. Searches include event-local removed lines because those lines are intentionally interleaved with additions in Timeline's historical view.
+
+Press `Enter` or `Esc` to hide the bar while retaining its highlights. Use `]s` and `[s` from any pane to move through occurrences with wraparound. Delete all search text to clear the highlights. Selecting another file or commit clears code search automatically so results cannot leak into a different snapshot.
 
 ## How synchronization works
 
