@@ -52,50 +52,57 @@ COMMANDS                                                  *timeline-commands*
 ==============================================================================
 COMMIT SEARCH                                             *timeline-search*
 
-Press / from any Timeline pane to open the "Search commits:" prompt. The query
-is case-insensitive and matched literally against the visible change number and
-commit message. For example:
+Press / from any Timeline pane to toggle a dedicated search bar above Changes.
+The pane makes room for the bar, and both resize with Neovim. The query never
+uses the bottom command line.
+
+Results update after every keystroke. Nonmatching commits disappear, while the
+Changes title displays the remaining count. Matching is case-insensitive and
+literal across change numbers and commit messages. For example:
 >
     auth
     #012
     base
 <
-The first match at or after the current event opens immediately. All matches
-are highlighted in Changes, whose title displays the result count. Press n for
-the next match or N for the previous match from any pane. Navigation wraps at
-the beginning and end of the results.
+The current commit remains selected while it matches. Otherwise, the first
+later match opens, wrapping to the first result when necessary. Press <CR> or
+<Esc> to hide the bar and keep the filter active. Then press n for the next
+result or N for the previous result from any pane. Navigation wraps.
 
 Opening a result reconstructs the complete codebase at that event. Codebase
 contains every file that existed then, and Code displays the selected full file
 with the event-local additions and removals highlighted.
 
-Submit an empty query to clear the search and highlights. When no commit
-matches, the current event remains selected and the Changes title displays
+Delete all search text to restore every commit. When no commit matches, Changes
+contains no rows, the current snapshot remains open, and its title displays
 "no matches". Commit search does not inspect file contents, paths, timestamps,
 or commit hashes. Use |timeline-file-search| to search snapshot paths.
 
 ==============================================================================
 FILE SEARCH                                          *timeline-file-search*
 
-Press F from any Timeline pane to search the complete file tree at the selected
-commit. The prompt includes the active change number, for example:
+Press F from any Timeline pane to toggle a dedicated search bar above Codebase.
+Its title includes the active change number, for example:
 >
     Search files in #012: src/api
 <
-Queries are case-insensitive literal matches against complete
-repository-relative paths. The first result at or after the currently selected
-file opens immediately. All results are highlighted in Codebase, whose title
-displays the count. Press ]f for the next match or [f for the previous match
-from any pane. Navigation wraps at the beginning and end.
+The bar and Codebase pane resize together. Results update after every keystroke,
+and nonmatching paths disappear immediately. Queries are case-insensitive
+literal matches against complete repository-relative paths.
+
+The selected file remains open while it matches. Otherwise, the first later
+result opens in Code. Press <CR> or <Esc> to hide the bar and keep the filter,
+then use ]f for the next result or [f for the previous result from any pane.
+Navigation wraps.
 
 Search uses the historical snapshot, not the current working directory. It
 includes unchanged files, plus a deleted file at its deletion event. Opening a
 result displays the complete historical file in Code with event-local changes
 highlighted.
 
-Submit an empty query to clear file search. Changing commits also clears it so
-paths from one filesystem snapshot never leak into another. File search matches
-paths only; it does not inspect file contents.
+Delete all search text to restore the complete snapshot tree. Changing commits
+also clears the filter so paths from one filesystem snapshot never leak into
+another. File search matches paths only; it does not inspect file contents.
 
 ==============================================================================
 SETUP                                                        *timeline-setup*

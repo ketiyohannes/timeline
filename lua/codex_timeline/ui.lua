@@ -8,7 +8,9 @@ local state = {
   windows = {},
   buffers = {},
   events = {},
+  visible_events = {},
   files = {},
+  visible_files = {},
   changes = {},
   root = nil,
   ref = nil,
@@ -16,6 +18,7 @@ local state = {
   augroup = nil,
   search = { query = "", matches = {}, index = 0 },
   file_search = { query = "", matches = {}, index = 0 },
+  search_bars = {},
 }
 
 local function valid_window(window)
@@ -24,14 +27,23 @@ end
 
 local function close()
   local windows = state.windows
+  local search_bars = state.search_bars
   state.windows = {}
   state.buffers = {}
+  state.search_bars = {}
+  state.visible_events = {}
+  state.visible_files = {}
   state.search = { query = "", matches = {}, index = 0 }
   state.file_search = { query = "", matches = {}, index = 0 }
   state.event = nil
   if state.augroup then
     pcall(vim.api.nvim_del_augroup_by_id, state.augroup)
     state.augroup = nil
+  end
+  for _, bar in pairs(search_bars) do
+    if valid_window(bar.window) then
+      vim.api.nvim_win_close(bar.window, true)
+    end
   end
   for _, window in pairs(windows) do
     if valid_window(window) then
@@ -64,6 +76,15 @@ local function dimensions()
   }
 end
 
+local function search_bar_open(role)
+  local bar = state.search_bars[role]
+  return bar and valid_window(bar.window)
+end
+
+local function pane_offset(role, height)
+  return search_bar_open(role) and height >= 4 and 3 or 0
+end
+
 local function apply_layout()
   if not valid_window(state.windows.changes)
     or not valid_window(state.windows.files)
@@ -72,18 +93,35 @@ local function apply_layout()
   end
 
   local size = dimensions()
+  local changes_offset = pane_offset("commits", size.height)
+  local files_offset = pane_offset("files", size.height)
   vim.api.nvim_win_set_config(state.windows.changes, {
-    relative = "editor", row = size.row, col = size.col,
-    width = size.changes_width, height = size.height,
+    relative = "editor", row = size.row + changes_offset, col = size.col,
+    width = size.changes_width, height = math.max(1, size.height - changes_offset),
   })
   vim.api.nvim_win_set_config(state.windows.files, {
-    relative = "editor", row = size.row, col = size.col + size.changes_width + 2,
-    width = size.files_width, height = size.height,
+    relative = "editor", row = size.row + files_offset, col = size.col + size.changes_width + 2,
+    width = size.files_width, height = math.max(1, size.height - files_offset),
   })
   vim.api.nvim_win_set_config(state.windows.source, {
     relative = "editor", row = size.row, col = size.col + size.changes_width + size.files_width + 4,
     width = size.source_width, height = size.height,
   })
+
+  local commit_bar = state.search_bars.commits
+  if commit_bar and valid_window(commit_bar.window) then
+    vim.api.nvim_win_set_config(commit_bar.window, {
+      relative = "editor", row = size.row, col = size.col,
+      width = size.changes_width, height = 1,
+    })
+  end
+  local file_bar = state.search_bars.files
+  if file_bar and valid_window(file_bar.window) then
+    vim.api.nvim_win_set_config(file_bar.window, {
+      relative = "editor", row = size.row, col = size.col + size.changes_width + 2,
+      width = size.files_width, height = 1,
+    })
+  end
 end
 
 local function set_lines(buffer, lines)
@@ -96,14 +134,14 @@ local function current_event()
   if not valid_window(state.windows.changes) then
     return nil
   end
-  return state.events[vim.api.nvim_win_get_cursor(state.windows.changes)[1]]
+  return state.visible_events[vim.api.nvim_win_get_cursor(state.windows.changes)[1]]
 end
 
 local function current_file()
   if not valid_window(state.windows.files) then
     return nil
   end
-  return state.files[vim.api.nvim_win_get_cursor(state.windows.files)[1]]
+  return state.visible_files[vim.api.nvim_win_get_cursor(state.windows.files)[1]]
 end
 
 local function source_title(event)
@@ -164,117 +202,143 @@ local function file_highlight(change)
   return "CodexTimelineChangeFile"
 end
 
-local function file_search_title()
-  if state.file_search.query == "" then
-    return " Codebase "
+local update_search_bar
+
+local function match_title(label, query, count)
+  if query == "" then
+    return string.format(" %s ", label)
   end
-  local count = #state.file_search.matches
   if count == 0 then
-    return " Codebase · no matches "
+    return string.format(" %s · no matches ", label)
   end
-  return string.format(" Codebase · %d %s ", count, count == 1 and "match" or "matches")
+  return string.format(" %s · %d %s ", label, count, count == 1 and "match" or "matches")
 end
 
-local function render_file_search()
+local function render_match_highlights(buffer, search_ns, count, current)
+  vim.api.nvim_buf_clear_namespace(buffer, search_ns, 0, -1)
+  for index = 1, count do
+    vim.api.nvim_buf_set_extmark(buffer, search_ns, index - 1, 0, {
+      line_hl_group = index == current and "TimelineSearchCurrent" or "TimelineSearchMatch",
+      priority = index == current and 80 or 60,
+    })
+  end
+end
+
+local function render_files(preferred_path)
   local buffer = state.buffers.files
   if not buffer or not vim.api.nvim_buf_is_valid(buffer) then
     return
   end
 
-  vim.api.nvim_buf_clear_namespace(buffer, file_search_namespace, 0, -1)
-  for match_index, row in ipairs(state.file_search.matches) do
-    vim.api.nvim_buf_set_extmark(buffer, file_search_namespace, row - 1, 0, {
-      line_hl_group = match_index == state.file_search.index and "TimelineSearchCurrent" or "TimelineSearchMatch",
-      priority = match_index == state.file_search.index and 80 or 60,
-    })
-  end
-
-  if valid_window(state.windows.files) then
-    vim.api.nvim_win_set_config(state.windows.files, {
-      title = file_search_title(),
-      title_pos = "center",
-    })
-  end
-end
-
-local function select_file_match(index)
-  local matches = state.file_search.matches
-  if #matches == 0 or not valid_window(state.windows.files) then
-    return
-  end
-  state.file_search.index = ((index - 1) % #matches) + 1
-  vim.api.nvim_win_set_cursor(state.windows.files, { matches[state.file_search.index], 0 })
-  render_file_search()
-  render_source()
-end
-
-local function sync_file_search_to_cursor()
-  if #state.file_search.matches == 0 or not valid_window(state.windows.files) then
-    return
-  end
-  local row = vim.api.nvim_win_get_cursor(state.windows.files)[1]
-  for index, match_row in ipairs(state.file_search.matches) do
-    if match_row == row then
-      state.file_search.index = index
-      render_file_search()
-      return
-    end
-  end
-end
-
-function M.search_files(query)
-  if query == nil then
-    local marker = state.event and event_marker(state.event) or "current commit"
-    vim.ui.input({
-      prompt = string.format("Search files in %s: ", marker),
-      default = state.file_search.query,
-    }, function(input)
-      if input ~= nil then
-        M.search_files(input)
-      end
-    end)
-    return
-  end
-
-  query = vim.trim(query)
-  state.file_search = { query = query, matches = {}, index = 0 }
-  if query == "" then
-    render_file_search()
-    return
-  end
-
-  local needle = query:lower()
-  for row, path in ipairs(state.files) do
-    if path:lower():find(needle, 1, true) then
-      state.file_search.matches[#state.file_search.matches + 1] = row
-    end
-  end
-
-  if #state.file_search.matches == 0 then
-    render_file_search()
-    local marker = state.event and event_marker(state.event) or "current commit"
-    vim.notify(string.format('Timeline: no files match "%s" in %s', query, marker), vim.log.levels.INFO)
-    return
-  end
-
-  local current_row = valid_window(state.windows.files)
-      and vim.api.nvim_win_get_cursor(state.windows.files)[1]
-    or 1
   local selected = 1
-  for index, row in ipairs(state.file_search.matches) do
-    if row >= current_row then
+  for index, path in ipairs(state.visible_files) do
+    if path == preferred_path then
       selected = index
       break
     end
   end
-  select_file_match(selected)
+  state.file_search.index = state.file_search.query == "" and 0 or selected
+
+  vim.api.nvim_buf_clear_namespace(buffer, namespace, 0, -1)
+  vim.api.nvim_buf_clear_namespace(buffer, file_search_namespace, 0, -1)
+  set_lines(buffer, state.visible_files)
+  for index, path in ipairs(state.visible_files) do
+    local group = file_highlight(state.changes[path])
+    if group then
+      vim.api.nvim_buf_set_extmark(buffer, namespace, index - 1, 0, {
+        line_hl_group = group,
+        priority = 50,
+      })
+    end
+  end
+  if state.file_search.query ~= "" then
+    render_match_highlights(buffer, file_search_namespace, #state.visible_files, state.file_search.index)
+  end
+
+  if valid_window(state.windows.files) then
+    vim.api.nvim_win_set_config(state.windows.files, {
+      title = match_title("Codebase", state.file_search.query, #state.visible_files),
+      title_pos = "center",
+    })
+  end
+
+  if #state.visible_files == 0 or not valid_window(state.windows.files) then
+    return
+  end
+  vim.api.nvim_win_set_cursor(state.windows.files, { selected, 0 })
+  render_source()
+end
+
+local function apply_file_filter(query, preferred_path)
+  query = vim.trim(query or "")
+  local needle = query:lower()
+  local matches, visible = {}, {}
+  for row, path in ipairs(state.files) do
+    if query == "" or path:lower():find(needle, 1, true) then
+      visible[#visible + 1] = path
+      if query ~= "" then
+        matches[#matches + 1] = row
+      end
+    end
+  end
+  state.file_search = { query = query, matches = matches, index = 0 }
+  state.visible_files = visible
+
+  if preferred_path then
+    local previous_path = preferred_path
+    local found = false
+    for _, path in ipairs(visible) do
+      if path == preferred_path then
+        found = true
+        break
+      end
+    end
+    if not found then
+      preferred_path = nil
+      for _, path in ipairs(visible) do
+        if path >= previous_path then
+          preferred_path = path
+          break
+        end
+      end
+    end
+  end
+  render_files(preferred_path)
+end
+
+function M.search_files(query)
+  if query == nil then
+    M.toggle_search_bar("files")
+    return
+  end
+  local preferred_path = current_file()
+  apply_file_filter(query, preferred_path)
 end
 
 function M.next_file_match(direction)
-  if #state.file_search.matches == 0 then
+  local count = #state.visible_files
+  if state.file_search.query == "" or count == 0 or not valid_window(state.windows.files) then
     return
   end
-  select_file_match(state.file_search.index + (direction or 1))
+  local row = vim.api.nvim_win_get_cursor(state.windows.files)[1]
+  row = ((row - 1 + (direction or 1)) % count) + 1
+  state.file_search.index = row
+  vim.api.nvim_win_set_cursor(state.windows.files, { row, 0 })
+  render_match_highlights(state.buffers.files, file_search_namespace, count, row)
+  render_source()
+end
+
+local function sync_file_search_to_cursor()
+  if state.file_search.query == "" or not valid_window(state.windows.files) then
+    return
+  end
+  state.file_search.index = vim.api.nvim_win_get_cursor(state.windows.files)[1]
+  render_match_highlights(
+    state.buffers.files,
+    file_search_namespace,
+    #state.visible_files,
+    state.file_search.index
+  )
 end
 
 local function render_event()
@@ -286,6 +350,9 @@ local function render_event()
   state.event = event
   if event_changed then
     state.file_search = { query = "", matches = {}, index = 0 }
+    if update_search_bar then
+      update_search_bar("files", "")
+    end
   end
 
   local files, tree_err = git.tree(state.root, event)
@@ -294,7 +361,6 @@ local function render_event()
     vim.notify("Timeline: " .. (tree_err or changes_err or "unable to read snapshot"), vim.log.levels.ERROR)
     return
   end
-
   for path, change in pairs(changes) do
     if change.kind == "D" then
       files[#files + 1] = path
@@ -303,140 +369,130 @@ local function render_event()
   table.sort(files)
   state.files, state.changes = files, changes
 
-  local file_buffer = state.buffers.files
-  vim.api.nvim_buf_clear_namespace(file_buffer, namespace, 0, -1)
-  set_lines(file_buffer, files)
-  for index, path in ipairs(files) do
-    local group = file_highlight(changes[path])
-    if group then
-      vim.api.nvim_buf_set_extmark(file_buffer, namespace, index - 1, 0, {
-        line_hl_group = group,
-        priority = 50,
-      })
-    end
-  end
-  render_file_search()
-
-  local selected = 1
-  for index, path in ipairs(files) do
+  local selected
+  for _, path in ipairs(files) do
     if changes[path] then
-      selected = index
+      selected = path
       break
     end
   end
-  if valid_window(state.windows.files) and #files > 0 then
-    vim.api.nvim_win_set_cursor(state.windows.files, { selected, 0 })
-  end
-  render_source()
+  apply_file_filter("", selected)
 end
 
-local function search_title()
-  if state.search.query == "" then
-    return " Changes "
-  end
-  local count = #state.search.matches
-  if count == 0 then
-    return " Changes · no matches "
-  end
-  return string.format(" Changes · %d %s ", count, count == 1 and "match" or "matches")
-end
-
-local function render_search()
+local function render_commits(preferred_event)
   local buffer = state.buffers.changes
   if not buffer or not vim.api.nvim_buf_is_valid(buffer) then
     return
   end
-
-  vim.api.nvim_buf_clear_namespace(buffer, search_namespace, 0, -1)
-  for match_index, row in ipairs(state.search.matches) do
-    vim.api.nvim_buf_set_extmark(buffer, search_namespace, row - 1, 0, {
-      line_hl_group = match_index == state.search.index and "TimelineSearchCurrent" or "TimelineSearchMatch",
-      priority = match_index == state.search.index and 80 or 60,
-    })
-  end
-
-  if valid_window(state.windows.changes) then
-    vim.api.nvim_win_set_config(state.windows.changes, {
-      title = search_title(),
-      title_pos = "center",
-    })
-  end
-end
-
-local function select_search_match(index)
-  local matches = state.search.matches
-  if #matches == 0 or not valid_window(state.windows.changes) then
-    return
-  end
-  state.search.index = ((index - 1) % #matches) + 1
-  vim.api.nvim_win_set_cursor(state.windows.changes, { matches[state.search.index], 0 })
-  render_search()
-  render_event()
-end
-
-local function sync_search_to_cursor()
-  if #state.search.matches == 0 or not valid_window(state.windows.changes) then
-    return
-  end
-  local row = vim.api.nvim_win_get_cursor(state.windows.changes)[1]
-  for index, match_row in ipairs(state.search.matches) do
-    if match_row == row then
-      state.search.index = index
-      render_search()
-      return
-    end
-  end
-end
-
-function M.search(query)
-  if query == nil then
-    vim.ui.input({ prompt = "Search commits: ", default = state.search.query }, function(input)
-      if input ~= nil then
-        M.search(input)
-      end
-    end)
-    return
-  end
-
-  query = vim.trim(query)
-  state.search = { query = query, matches = {}, index = 0 }
-  if query == "" then
-    render_search()
-    return
-  end
-
-  local needle = query:lower()
-  for row, event in ipairs(state.events) do
-    local searchable = string.format("%s %s", event_marker(event), event.subject):lower()
-    if searchable:find(needle, 1, true) then
-      state.search.matches[#state.search.matches + 1] = row
-    end
-  end
-
-  if #state.search.matches == 0 then
-    render_search()
-    vim.notify(string.format('Timeline: no commits match "%s"', query), vim.log.levels.INFO)
-    return
-  end
-
-  local current_row = valid_window(state.windows.changes)
-      and vim.api.nvim_win_get_cursor(state.windows.changes)[1]
-    or 1
   local selected = 1
-  for index, row in ipairs(state.search.matches) do
-    if row >= current_row then
+  for index, event in ipairs(state.visible_events) do
+    if event == preferred_event then
       selected = index
       break
     end
   end
-  select_search_match(selected)
+  state.search.index = state.search.query == "" and 0 or selected
+
+  local lines = {}
+  for _, event in ipairs(state.visible_events) do
+    lines[#lines + 1] = string.format("%-5s %s", event_marker(event), event.subject)
+  end
+  vim.api.nvim_buf_clear_namespace(buffer, namespace, 0, -1)
+  vim.api.nvim_buf_clear_namespace(buffer, search_namespace, 0, -1)
+  set_lines(buffer, lines)
+  for index, _ in ipairs(state.visible_events) do
+    vim.api.nvim_buf_add_highlight(buffer, namespace, "CodexTimelineChangeNumber", index - 1, 0, 4)
+  end
+  if state.search.query ~= "" then
+    render_match_highlights(buffer, search_namespace, #state.visible_events, state.search.index)
+  end
+  if valid_window(state.windows.changes) then
+    vim.api.nvim_win_set_config(state.windows.changes, {
+      title = match_title("Changes", state.search.query, #state.visible_events),
+      title_pos = "center",
+    })
+  end
+  if #state.visible_events == 0 or not valid_window(state.windows.changes) then
+    return
+  end
+  vim.api.nvim_win_set_cursor(state.windows.changes, { selected, 0 })
+  render_event()
+end
+
+function M.search(query)
+  if query == nil then
+    M.toggle_search_bar("commits")
+    return
+  end
+  query = vim.trim(query)
+  local previous_event = state.event or current_event()
+  local previous_row = 1
+  for row, event in ipairs(state.events) do
+    if event == previous_event then
+      previous_row = row
+      break
+    end
+  end
+
+  local needle = query:lower()
+  local matches, visible = {}, {}
+  for row, event in ipairs(state.events) do
+    local searchable = string.format("%s %s", event_marker(event), event.subject):lower()
+    if query == "" or searchable:find(needle, 1, true) then
+      visible[#visible + 1] = event
+      if query ~= "" then
+        matches[#matches + 1] = row
+      end
+    end
+  end
+  state.search = { query = query, matches = matches, index = 0 }
+  state.visible_events = visible
+
+  local preferred = previous_event
+  local found = false
+  for _, event in ipairs(visible) do
+    if event == preferred then
+      found = true
+      break
+    end
+  end
+  if not found then
+    preferred = nil
+    for index, row in ipairs(matches) do
+      if row >= previous_row then
+        preferred = visible[index]
+        break
+      end
+    end
+    preferred = preferred or visible[1]
+  end
+  render_commits(preferred)
 end
 
 function M.next_match(direction)
-  if #state.search.matches == 0 then
+  local count = #state.visible_events
+  if state.search.query == "" or count == 0 or not valid_window(state.windows.changes) then
     return
   end
-  select_search_match(state.search.index + (direction or 1))
+  local row = vim.api.nvim_win_get_cursor(state.windows.changes)[1]
+  row = ((row - 1 + (direction or 1)) % count) + 1
+  state.search.index = row
+  vim.api.nvim_win_set_cursor(state.windows.changes, { row, 0 })
+  render_match_highlights(state.buffers.changes, search_namespace, count, row)
+  render_event()
+end
+
+local function sync_search_to_cursor()
+  if state.search.query == "" or not valid_window(state.windows.changes) then
+    return
+  end
+  state.search.index = vim.api.nvim_win_get_cursor(state.windows.changes)[1]
+  render_match_highlights(
+    state.buffers.changes,
+    search_namespace,
+    #state.visible_events,
+    state.search.index
+  )
 end
 
 local function focus(role)
@@ -450,7 +506,7 @@ local function move_event(direction)
     return
   end
   local row = vim.api.nvim_win_get_cursor(state.windows.changes)[1]
-  row = math.max(1, math.min(#state.events, row + direction))
+  row = math.max(1, math.min(#state.visible_events, row + direction))
   vim.api.nvim_win_set_cursor(state.windows.changes, { row, 0 })
   render_event()
 end
@@ -459,6 +515,130 @@ local function map_all(lhs, callback, description)
   for _, buffer in pairs(state.buffers) do
     vim.keymap.set("n", lhs, callback, { buffer = buffer, silent = true, nowait = true, desc = description })
   end
+end
+
+local function close_search_bar(role)
+  local bar = state.search_bars[role]
+  if not bar then
+    return
+  end
+  state.search_bars[role] = nil
+  if valid_window(bar.window) then
+    vim.api.nvim_win_close(bar.window, true)
+  end
+  apply_layout()
+  focus(role == "commits" and "changes" or "files")
+end
+
+local function search_bar_title(role)
+  if role == "commits" then
+    return " Search commits "
+  end
+  local marker = state.event and event_marker(state.event) or "current"
+  return string.format(" Search files in %s ", marker)
+end
+
+update_search_bar = function(role, text)
+  local bar = state.search_bars[role]
+  if not bar or not vim.api.nvim_buf_is_valid(bar.buffer) then
+    return
+  end
+  text = text or ""
+  local current = vim.api.nvim_buf_get_lines(bar.buffer, 0, 1, false)[1] or ""
+  if current ~= text then
+    state.updating_bar = true
+    vim.api.nvim_buf_set_lines(bar.buffer, 0, -1, false, { text })
+    state.updating_bar = false
+  end
+  if valid_window(bar.window) then
+    vim.api.nvim_win_set_config(bar.window, {
+      title = search_bar_title(role),
+      title_pos = "center",
+    })
+  end
+end
+
+function M.toggle_search_bar(role)
+  if role ~= "commits" and role ~= "files" then
+    return
+  end
+  if search_bar_open(role) then
+    close_search_bar(role)
+    return
+  end
+
+  local size = dimensions()
+  local is_commits = role == "commits"
+  local query = is_commits and state.search.query or state.file_search.query
+  local buffer = vim.api.nvim_create_buf(false, true)
+  vim.bo[buffer].buftype = "nofile"
+  vim.bo[buffer].bufhidden = "wipe"
+  vim.bo[buffer].swapfile = false
+  vim.bo[buffer].filetype = "timeline-search"
+  vim.api.nvim_buf_set_lines(buffer, 0, -1, false, { query })
+
+  local window = vim.api.nvim_open_win(buffer, true, {
+    relative = "editor",
+    row = size.row,
+    col = is_commits and size.col or size.col + size.changes_width + 2,
+    width = is_commits and size.changes_width or size.files_width,
+    height = 1,
+    style = "minimal",
+    border = "rounded",
+    title = search_bar_title(role),
+    title_pos = "center",
+  })
+  state.search_bars[role] = { buffer = buffer, window = window }
+  vim.wo[window].wrap = false
+  vim.wo[window].number = false
+  vim.wo[window].relativenumber = false
+  vim.wo[window].signcolumn = "no"
+  vim.wo[window].winhighlight = table.concat({
+    "FloatBorder:CodexTimelineBorder",
+    "FloatTitle:CodexTimelineTitle",
+  }, ",")
+
+  vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
+    group = state.augroup,
+    buffer = buffer,
+    callback = function()
+      if state.updating_bar or not vim.api.nvim_buf_is_valid(buffer) then
+        return
+      end
+      local value = vim.api.nvim_buf_get_lines(buffer, 0, 1, false)[1] or ""
+      if is_commits then
+        M.search(value)
+      else
+        M.search_files(value)
+      end
+    end,
+  })
+  vim.api.nvim_create_autocmd("BufWipeout", {
+    group = state.augroup,
+    buffer = buffer,
+    once = true,
+    callback = function()
+      local active = state.search_bars[role]
+      if active and active.buffer == buffer then
+        state.search_bars[role] = nil
+        vim.schedule(apply_layout)
+      end
+    end,
+  })
+
+  local function finish_search()
+    vim.cmd("stopinsert")
+    close_search_bar(role)
+  end
+  vim.keymap.set("i", "<CR>", finish_search, { buffer = buffer, silent = true, nowait = true })
+  vim.keymap.set("i", "<Esc>", finish_search, { buffer = buffer, silent = true, nowait = true })
+  vim.keymap.set("i", "<C-c>", finish_search, { buffer = buffer, silent = true, nowait = true })
+  vim.keymap.set("n", "q", function() close_search_bar(role) end, { buffer = buffer, silent = true })
+  vim.keymap.set("n", "<Esc>", function() close_search_bar(role) end, { buffer = buffer, silent = true })
+
+  apply_layout()
+  vim.api.nvim_win_set_cursor(window, { 1, #query })
+  vim.cmd("startinsert!")
 end
 
 function M.open(opts)
@@ -482,6 +662,8 @@ function M.open(opts)
   end
 
   state.root, state.ref, state.events = root, ref, events
+  state.visible_events = events
+  state.files, state.visible_files = {}, {}
   state.search = { query = "", matches = {}, index = 0 }
   state.file_search = { query = "", matches = {}, index = 0 }
   local size = dimensions()

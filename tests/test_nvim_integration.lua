@@ -63,10 +63,31 @@ local function window_title(window)
   return title
 end
 
-ui.search("#002")
+local changes_before_search = vim.api.nvim_win_get_config(ui_state.windows.changes)
+ui.toggle_search_bar("commits")
+local commit_bar = assert(ui_state.search_bars.commits, "commit search bar did not open")
+local commit_bar_config = vim.api.nvim_win_get_config(commit_bar.window)
+local changes_with_search = vim.api.nvim_win_get_config(ui_state.windows.changes)
+assert(commit_bar_config.relative == "editor", "commit search is not an in-browser floating bar")
+assert(changes_with_search.row > commit_bar_config.row, "commit results did not move below their search bar")
+assert(changes_with_search.height < changes_before_search.height, "commit pane did not make room for search")
+vim.o.columns = 150
+vim.cmd.doautocmd("VimResized")
+local wide_commit_bar = vim.api.nvim_win_get_config(commit_bar.window)
+vim.o.columns = 110
+vim.cmd.doautocmd("VimResized")
+local narrow_commit_bar = vim.api.nvim_win_get_config(commit_bar.window)
+assert(narrow_commit_bar.width < wide_commit_bar.width, "commit search bar did not resize with the browser")
+vim.api.nvim_buf_set_lines(commit_bar.buffer, 0, -1, false, { "#002" })
+vim.cmd.doautocmd("TextChangedI")
 assert(ui_state.search.query == "#002", "search query was not retained")
 assert(#ui_state.search.matches == 1, "change-number search should find exactly one commit")
-assert(vim.api.nvim_win_get_cursor(ui_state.windows.changes)[1] == 3, "search did not select change #002")
+local filtered_commits = vim.api.nvim_buf_get_lines(roles.changes, 0, -1, false)
+assert(#filtered_commits == 1 and filtered_commits[1]:find("refactor", 1, true), "commit search did not filter nonmatches")
+assert(vim.api.nvim_win_get_cursor(ui_state.windows.changes)[1] == 1, "filtered commit was not selected")
+ui.toggle_search_bar("commits")
+assert(ui_state.search_bars.commits == nil, "commit search bar did not toggle closed")
+assert(vim.api.nvim_win_get_config(ui_state.windows.changes).height == changes_before_search.height, "commit pane did not reclaim space")
 local search_namespace = vim.api.nvim_get_namespaces().timeline_search
 local search_marks = vim.api.nvim_buf_get_extmarks(roles.changes, search_namespace, 0, -1, { details = true })
 assert(#search_marks == 1, "search result was not highlighted")
@@ -87,10 +108,25 @@ assert(#vim.api.nvim_buf_get_extmarks(roles.changes, search_namespace, 0, -1, {}
 
 -- File search is scoped to the selected commit and opens each result from the
 -- historical tree rather than the current worktree.
-ui.search_files("deep")
+local files_before_search = vim.api.nvim_win_get_config(ui_state.windows.files)
+ui.toggle_search_bar("files")
+local file_bar = assert(ui_state.search_bars.files, "file search bar did not open")
+local file_bar_config = vim.api.nvim_win_get_config(file_bar.window)
+local files_with_search = vim.api.nvim_win_get_config(ui_state.windows.files)
+assert(file_bar_config.relative == "editor", "file search is not an in-browser floating bar")
+assert(files_with_search.row > file_bar_config.row, "file results did not move below their search bar")
+assert(files_with_search.height < files_before_search.height, "codebase pane did not make room for search")
+assert(window_title(file_bar.window):find("#002", 1, true), "file search bar does not identify its commit")
+vim.api.nvim_buf_set_lines(file_bar.buffer, 0, -1, false, { "deep" })
+vim.cmd.doautocmd("TextChangedI")
 assert(ui_state.file_search.query == "deep", "file search query was not retained")
 assert(#ui_state.file_search.matches == 1, "file search should find one deep file")
+local filtered_files = vim.api.nvim_buf_get_lines(roles.files, 0, -1, false)
+assert(#filtered_files == 1 and filtered_files[1] == "deep.txt", "file search did not filter nonmatches")
 assert(vim.b[roles.source].codex_timeline_path == "deep.txt", "file search did not open its historical result")
+ui.toggle_search_bar("files")
+assert(ui_state.search_bars.files == nil, "file search bar did not toggle closed")
+assert(vim.api.nvim_win_get_config(ui_state.windows.files).height == files_before_search.height, "codebase pane did not reclaim space")
 local file_search_namespace = vim.api.nvim_get_namespaces().timeline_file_search
 local file_search_marks = vim.api.nvim_buf_get_extmarks(
   roles.files,

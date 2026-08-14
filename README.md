@@ -121,9 +121,9 @@ Keys:
 | `Enter` | Move from Changes to Codebase, then to Code |
 | `1` / `2` / `3` | Focus a pane directly |
 | `[c` / `]c` | Select the previous or next event from any pane |
-| `/` | Search commit messages or change numbers such as `#012` |
+| `/` | Toggle real-time commit search |
 | `n` / `N` | Jump to the next or previous search match |
-| `F` | Search file paths in the selected commit |
+| `F` | Toggle real-time file search for the selected commit |
 | `[f` / `]f` | Jump to the previous or next file match |
 | `r` | Refresh the browser |
 | `q` / `Esc` | Close the browser |
@@ -134,7 +134,9 @@ The three panes resize and recenter automatically whenever the Neovim window cha
 
 ### Searching commits
 
-Press `/` from any pane to open the `Search commits:` prompt. Search is case-insensitive and performs a plain-text match against each visible change number and commit message.
+Press `/` from any pane to open a dedicated `Search commits` bar above Changes. The pane makes room for the bar, and both stay aligned as Neovim resizes. Nothing is entered through Neovim's bottom command line.
+
+Filtering happens after every keystroke. Nonmatching commits disappear immediately, while the Changes title reports the remaining result count. Search is case-insensitive and performs a plain-text match against each change number and commit message.
 
 Examples:
 
@@ -142,15 +144,17 @@ Examples:
 - `#012` jumps directly to change 12.
 - `base` finds the imported baseline event.
 
-The first match at or after the currently selected commit is opened immediately. Every match is highlighted in the Changes pane, and its title shows the number of results. Press `n` or `N` from any pane to move forward or backward; navigation wraps when it reaches either end.
+The selected commit is retained while it still matches. Otherwise, the first later match is opened, wrapping to the first result when needed. Press `Enter` or `Esc` to hide the bar while keeping its filter active. Then use `n` or `N` from any pane to move forward or backward through the filtered results; navigation wraps at either end. Pressing `/` again also toggles the bar.
 
 Selecting a search result reconstructs that event across the entire browser. Codebase shows every file that existed then, while Code opens the first changed file with its highlighted change at the top. The full file remains available for normal scrolling.
 
-Run `/` and submit an empty value to clear the query and its highlights. A query with no results leaves the current event selected and shows `no matches` in the Changes title. Commit search covers change numbers and messages only; use `F` to search paths in the selected snapshot. It does not search file contents, timestamps, or commit hashes.
+Delete all text in the bar to restore every commit. A query with no results removes every row from Changes, leaves the current snapshot open in the other panes, and shows `no matches` in the title. Commit search covers change numbers and messages only; use `F` to search paths in the selected snapshot. It does not search file contents, timestamps, or commit hashes.
 
 ### Searching files in a commit
 
-Press `F` from any pane to search the complete file tree at the selected commit. The prompt includes the active change number, such as `Search files in #012:`, so it is always clear which historical snapshot is being searched.
+Press `F` from any pane to open a dedicated file-search bar above Codebase. Its title includes the active change number, such as `Search files in #012`, so it is always clear which historical snapshot is being searched. The bar and Codebase pane resize together with the rest of the browser.
+
+Filtering happens after every keystroke. Nonmatching paths are removed from Codebase immediately instead of merely being highlighted.
 
 The query is a case-insensitive plain-text match against complete repository-relative paths. For example:
 
@@ -158,11 +162,11 @@ The query is a case-insensitive plain-text match against complete repository-rel
 - `src/api` limits matches to that directory.
 - `.lua` finds Lua files anywhere in the snapshot.
 
-The first match at or after the currently selected file opens immediately in Code. Every result is highlighted in Codebase, whose title displays the match count. Use `]f` and `[f` from any pane to move forward and backward with wraparound.
+The selected file is retained while it still matches. Otherwise, the first later match opens immediately in Code. Press `Enter` or `Esc` to hide the bar while keeping the filter active, then use `]f` and `[f` from any pane to move forward and backward with wraparound. Pressing `F` again also toggles the bar.
 
 File search uses the historical tree, not the current working directory. Files unchanged at that commit remain searchable, and a deleted file remains searchable at its deletion event because Timeline preserves its previous contents for inspection. Selecting a result shows the complete file as it existed then, including any event-local addition or removal highlights.
 
-Press `F` and submit an empty value to clear the file query. Switching to another commit clears it automatically because that commit can have a different filesystem. File search matches paths only, not file contents.
+Delete all text in the bar to restore the complete snapshot tree. Switching to another commit clears the path filter automatically because that commit can have a different filesystem. File search matches paths only, not file contents.
 
 ## How synchronization works
 
