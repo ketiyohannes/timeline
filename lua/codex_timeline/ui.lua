@@ -148,6 +148,11 @@ local function source_title(event)
   return string.format(" %s · %s ", event_marker(event), event.subject)
 end
 
+local function source_winbar(path)
+  local escaped = path:gsub("%%", "%%%%")
+  return string.format("%%#CodexTimelineFilePath#%%=%%< %s %%=", escaped)
+end
+
 local function render_source()
   local event, path = state.event, current_file()
   if not event or not path or not state.buffers.source then
@@ -181,6 +186,7 @@ local function render_source()
       title = source_title(event),
       title_pos = "center",
     })
+    vim.wo[state.windows.source].winbar = source_winbar(path)
     local first_changed_line = highlights and highlights[1] and highlights[1].line or 1
     first_changed_line = math.max(1, math.min(first_changed_line, #lines))
     vim.api.nvim_win_set_cursor(state.windows.source, { first_changed_line, 0 })
@@ -725,6 +731,8 @@ function M.open(opts)
   vim.wo[state.windows.source].winhighlight = table.concat({
     "FloatBorder:CodexTimelineBorder",
     "FloatTitle:CodexTimelineTitle",
+    "WinBar:NormalFloat",
+    "WinBarNC:NormalFloat",
   }, ",")
 
   state.augroup = vim.api.nvim_create_augroup("TimelineUI", { clear = true })

@@ -130,7 +130,9 @@ Keys:
 
 Changed files are selected automatically. Added files are green, deleted files are red, and modified files are amber. Deleted files remain visible at their deletion event so their complete previous content can be inspected.
 
-The three panes resize and recenter automatically whenever the Neovim window changes size. When you select a changed file, the Code pane keeps the complete file loaded but scrolls so its first highlighted line is at the top of the viewport. A change beginning at line 300 therefore opens with line 300 visible first.
+The three panes resize and recenter automatically whenever the Neovim window changes size. The Code pane shows the change number and commit message in its title, with the opened repository-relative file path fixed directly beneath it. The path stays visible while the file scrolls and updates whenever another file is selected.
+
+When you select a changed file, the Code pane keeps the complete file loaded but scrolls so its first highlighted line is at the top of the viewport. A change beginning at line 300 therefore opens with line 300 visible first.
 
 ### Searching commits
 

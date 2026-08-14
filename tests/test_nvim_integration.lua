@@ -184,6 +184,7 @@ vim.api.nvim_win_set_cursor(ui_state.windows.files, { example_row, 0 })
 vim.cmd.doautocmd("CursorMoved")
 
 local source_lines = vim.api.nvim_buf_get_lines(roles.source, 0, -1, false)
+assert(vim.wo[ui_state.windows.source].winbar:find("example.txt", 1, true), "opened file path is missing below the commit title")
 assert(
   source_lines[1] == "alpha" and source_lines[2] == "beta" and source_lines[3] == "gamma",
   "source pane did not interleave the complete file with its removed and added lines"
@@ -214,6 +215,7 @@ local deep_topline = vim.api.nvim_win_call(ui_state.windows.source, function()
 end)
 assert(deep_topline == 300, "source viewport did not start at the first highlighted line")
 assert(vim.api.nvim_win_get_cursor(ui_state.windows.source)[1] == 300, "source cursor did not jump to the change")
+assert(vim.wo[ui_state.windows.source].winbar:find("deep.txt", 1, true), "file path did not update with selection")
 
 -- Moving backward reconstructs the full earlier codebase and its event-local
 -- highlights rather than showing the latest worktree or a raw patch.

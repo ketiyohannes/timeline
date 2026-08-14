@@ -14,7 +14,8 @@ COMMANDS                                                  *timeline-commands*
 :Timeline
     Open the three-pane snapshot browser. Changes shows ordered messages,
     Codebase shows every file at the event, and Code shows the complete file
-    with bold + and - highlights.
+    with bold + and - highlights. The Code title contains the change number and
+    message, with the opened repository-relative path fixed directly below it.
 
     Press <CR> to move right, 1/2/3 to focus a pane, [c and ]c to traverse
     events, r to refresh, and q or <Esc> to close. Press / from any pane to
