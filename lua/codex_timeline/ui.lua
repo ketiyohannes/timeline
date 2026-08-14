@@ -86,7 +86,7 @@ local function render_source()
 
   local lines, highlights, err = git.file_snapshot(state.root, event, path, state.changes[path])
   if not lines then
-    vim.notify("Codex Timeline: " .. (err or "unable to read snapshot file"), vim.log.levels.ERROR)
+    vim.notify("Timeline: " .. (err or "unable to read snapshot file"), vim.log.levels.ERROR)
     lines, highlights = { "" }, {}
   end
 
@@ -137,7 +137,7 @@ local function render_event()
   local files, tree_err = git.tree(state.root, event)
   local changes, changes_err = git.changes(state.root, event)
   if not files or not changes then
-    vim.notify("Codex Timeline: " .. (tree_err or changes_err or "unable to read snapshot"), vim.log.levels.ERROR)
+    vim.notify("Timeline: " .. (tree_err or changes_err or "unable to read snapshot"), vim.log.levels.ERROR)
     return
   end
 
@@ -203,17 +203,17 @@ function M.open(opts)
   local buffer_name = vim.api.nvim_buf_get_name(0)
   local root = git.root(buffer_name ~= "" and vim.fn.fnamemodify(buffer_name, ":h") or nil)
   if not root then
-    vim.notify("Codex Timeline: current buffer is not in a Git repository", vim.log.levels.WARN)
+    vim.notify("Timeline: current buffer is not in a Git repository", vim.log.levels.WARN)
     return
   end
   local ref = opts.ref or (opts.session and ("refs/codex-timeline/session-" .. opts.session)) or git.latest_ref(root)
   if not ref then
-    vim.notify("Codex Timeline: no recorded session found", vim.log.levels.INFO)
+    vim.notify("Timeline: no recorded session found", vim.log.levels.INFO)
     return
   end
   local events, err = git.events(root, ref)
   if not events then
-    vim.notify("Codex Timeline: " .. (err or "unable to load events"), vim.log.levels.ERROR)
+    vim.notify("Timeline: " .. (err or "unable to load events"), vim.log.levels.ERROR)
     return
   end
 
@@ -284,8 +284,8 @@ function M.open(opts)
   vim.api.nvim_create_autocmd("CursorMoved", { buffer = state.buffers.files, callback = render_source })
   vim.api.nvim_create_autocmd("BufWipeout", { buffer = state.buffers.changes, once = true, callback = close })
 
-  map_all("q", close, "Close Codex timeline")
-  map_all("<Esc>", close, "Close Codex timeline")
+  map_all("q", close, "Close Timeline")
+  map_all("<Esc>", close, "Close Timeline")
   map_all("[c", function() move_event(-1) end, "Previous recorded change")
   map_all("]c", function() move_event(1) end, "Next recorded change")
   map_all("1", function() focus("changes") end, "Focus recorded changes")
@@ -308,20 +308,20 @@ function M.select_session(callback)
   local buffer_name = vim.api.nvim_buf_get_name(0)
   local root = git.root(buffer_name ~= "" and vim.fn.fnamemodify(buffer_name, ":h") or nil)
   if not root then
-    vim.notify("Codex Timeline: current buffer is not in a Git repository", vim.log.levels.WARN)
+    vim.notify("Timeline: current buffer is not in a Git repository", vim.log.levels.WARN)
     return
   end
   local refs, err = git.refs(root)
   if not refs then
-    vim.notify("Codex Timeline: " .. (err or "unable to load sessions"), vim.log.levels.ERROR)
+    vim.notify("Timeline: " .. (err or "unable to load sessions"), vim.log.levels.ERROR)
     return
   end
   if #refs == 0 then
-    vim.notify("Codex Timeline: no recorded session found", vim.log.levels.INFO)
+    vim.notify("Timeline: no recorded session found", vim.log.levels.INFO)
     return
   end
   vim.ui.select(refs, {
-    prompt = "Codex timeline session",
+    prompt = "Timeline session",
     format_item = function(item)
       return item.ref:gsub("^refs/codex%-timeline/session%-", "")
     end,

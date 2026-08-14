@@ -1,7 +1,7 @@
 local M = {}
 
 function M.check()
-  vim.health.start("Codex Timeline")
+  vim.health.start("Timeline")
 
   if vim.fn.executable("git") == 1 then
     vim.health.ok("Git is available")
@@ -27,14 +27,14 @@ function M.check()
   if git.enabled(root) then
     vim.health.ok("Automatic recording is enabled (default for Git repositories)")
   else
-    vim.health.warn("Automatic recording is explicitly disabled; run :CodexTimelineEnable to resume")
+    vim.health.warn("Automatic recording is explicitly disabled; run :TimelineEnable to resume")
   end
 
   local ref = git.latest_ref(root)
   if git.has_ref(root, "refs/codex-timeline/session-project") then
     vim.health.ok("Existing repository is synchronized to the continuous project timeline")
   else
-    vim.health.info("Project baseline is pending; run :CodexTimelineSync or reopen a project file")
+    vim.health.info("Project baseline is pending; run :TimelineSync or reopen a project file")
   end
   if ref then
     vim.health.ok("Latest recorded session: " .. ref:gsub("^refs/codex%-timeline/", ""))

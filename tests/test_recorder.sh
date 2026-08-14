@@ -11,27 +11,31 @@ git -C "$test_root" config user.email test@example.com
 printf 'alpha\n' > "$test_root/example.txt"
 git -C "$test_root" add example.txt
 git -C "$test_root" commit -qm baseline
-[[ "$("$project_root/bin/codex-timeline" status --repo "$test_root")" == "enabled" ]] || {
+[[ "$("$project_root/bin/timeline" status --repo "$test_root")" == "enabled" ]] || {
   printf 'unconfigured Git repository should be enabled by default\n' >&2
   exit 1
 }
-"$project_root/bin/codex-timeline" sync --repo "$test_root" >/dev/null
+[[ "$("$project_root/bin/codex-timeline" status --repo "$test_root")" == "enabled" ]] || {
+  printf 'legacy recorder wrapper is broken\n' >&2
+  exit 1
+}
+"$project_root/bin/timeline" sync --repo "$test_root" >/dev/null
 git -C "$test_root" show-ref --verify --quiet refs/codex-timeline/session-project
 [[ "$(git -C "$test_root" rev-parse refs/codex-timeline/session-project)" == "$(git -C "$test_root" rev-parse HEAD)" ]] || {
   printf 'clean existing history was not imported directly\n' >&2
   exit 1
 }
-"$project_root/bin/codex-timeline" diff 1 --repo "$test_root" --session project | grep -q '^+alpha$'
+"$project_root/bin/timeline" diff 1 --repo "$test_root" --session project | grep -q '^+alpha$'
 
 head_before="$(git -C "$test_root" rev-parse HEAD)"
 index_before="$(git -C "$test_root" write-tree)"
 
-"$project_root/bin/codex-timeline" start --repo "$test_root" --session test >/dev/null
+"$project_root/bin/timeline" start --repo "$test_root" --session test >/dev/null
 printf 'alpha\nbeta\n' > "$test_root/example.txt"
-"$project_root/bin/codex-timeline" checkpoint --repo "$test_root" --session test --label apply_patch --tool apply_patch >/dev/null
+"$project_root/bin/timeline" checkpoint --repo "$test_root" --session test --label apply_patch --tool apply_patch >/dev/null
 printf 'alpha\nbeta\ngamma\n' > "$test_root/example.txt"
-"$project_root/bin/codex-timeline" checkpoint --repo "$test_root" --session test --label exec_command --tool exec_command >/dev/null
-"$project_root/bin/codex-timeline" checkpoint --repo "$test_root" --session test --label no-op >/dev/null
+"$project_root/bin/timeline" checkpoint --repo "$test_root" --session test --label exec_command --tool exec_command >/dev/null
+"$project_root/bin/timeline" checkpoint --repo "$test_root" --session test --label no-op >/dev/null
 
 ref="refs/codex-timeline/session-test"
 count="$(git -C "$test_root" rev-list --count "$ref")"
@@ -39,23 +43,23 @@ count="$(git -C "$test_root" rev-list --count "$ref")"
 [[ "$(git -C "$test_root" rev-parse HEAD)" == "$head_before" ]] || { printf 'HEAD changed\n' >&2; exit 1; }
 [[ "$(git -C "$test_root" write-tree)" == "$index_before" ]] || { printf 'index changed\n' >&2; exit 1; }
 
-list_output="$("$project_root/bin/codex-timeline" list --repo "$test_root" --session test)"
-[[ "$list_output" == *"codex-timeline: apply_patch"* ]] || { printf 'missing first event\n' >&2; exit 1; }
-[[ "$list_output" == *"codex-timeline: exec_command"* ]] || { printf 'missing second event\n' >&2; exit 1; }
-"$project_root/bin/codex-timeline" diff 1 --repo "$test_root" --session test | grep -q '^+beta$'
-"$project_root/bin/codex-timeline" diff 2 --repo "$test_root" --session test | grep -q '^+gamma$'
+list_output="$("$project_root/bin/timeline" list --repo "$test_root" --session test)"
+[[ "$list_output" == *"timeline: apply_patch"* ]] || { printf 'missing first event\n' >&2; exit 1; }
+[[ "$list_output" == *"timeline: exec_command"* ]] || { printf 'missing second event\n' >&2; exit 1; }
+"$project_root/bin/timeline" diff 1 --repo "$test_root" --session test | grep -q '^+beta$'
+"$project_root/bin/timeline" diff 2 --repo "$test_root" --session test | grep -q '^+gamma$'
 
 printf 'untracked\n' > "$test_root/new file.txt"
-"$project_root/bin/codex-timeline" checkpoint --repo "$test_root" --session test --label add-file >/dev/null
+"$project_root/bin/timeline" checkpoint --repo "$test_root" --session test --label add-file >/dev/null
 rm "$test_root/new file.txt"
-"$project_root/bin/codex-timeline" checkpoint --repo "$test_root" --session test --label delete-file >/dev/null
-"$project_root/bin/codex-timeline" files 3 --repo "$test_root" --session test | grep -q '^new file.txt$'
-"$project_root/bin/codex-timeline" diff 4 --repo "$test_root" --session test | grep -q '^deleted file mode'
+"$project_root/bin/timeline" checkpoint --repo "$test_root" --session test --label delete-file >/dev/null
+"$project_root/bin/timeline" files 3 --repo "$test_root" --session test | grep -q '^new file.txt$'
+"$project_root/bin/timeline" diff 4 --repo "$test_root" --session test | grep -q '^deleted file mode'
 
 printf 'alpha\nbeta\ngamma\ndelta\n' > "$test_root/example.txt"
-"$project_root/bin/codex-timeline" checkpoint --repo "$test_root" --session race --label first >/dev/null &
+"$project_root/bin/timeline" checkpoint --repo "$test_root" --session race --label first >/dev/null &
 first_pid=$!
-"$project_root/bin/codex-timeline" checkpoint --repo "$test_root" --session race --label second >/dev/null &
+"$project_root/bin/timeline" checkpoint --repo "$test_root" --session race --label second >/dev/null &
 second_pid=$!
 wait "$first_pid"
 wait "$second_pid"

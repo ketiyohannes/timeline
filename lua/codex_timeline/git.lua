@@ -89,7 +89,7 @@ function M.events(root, ref)
   for line in output:gmatch("[^\n]+") do
     local hash, parents, time, subject = line:match("^([^\t]+)\t([^\t]*)\t([^\t]+)\t(.*)$")
     if hash then
-      local synthetic = subject:match("^codex%-timeline:") ~= nil
+      local synthetic = subject:match("^timeline:") ~= nil or subject:match("^codex%-timeline:") ~= nil
       if zero_based == nil then
         zero_based = synthetic
       end
@@ -98,7 +98,7 @@ function M.events(root, ref)
         hash = hash,
         parent = parents:match("^[^ ]+") or "",
         time = time,
-        subject = subject:gsub("^codex%-timeline:%s*", ""),
+        subject = subject:gsub("^timeline:%s*", ""):gsub("^codex%-timeline:%s*", ""),
         sequence = sequence,
         synthetic = synthetic,
       }

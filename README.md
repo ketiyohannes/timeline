@@ -1,106 +1,145 @@
-# Codex Timeline
+# Timeline
 
-See Codex changes in Neovim in the order they happened.
+Timeline is a Neovim time machine for Git repositories changed by Codex. It imports existing commits, records future Codex tool calls in order, and lets you browse the complete codebase at every point without touching your branch, `HEAD`, worktree, or staging area.
 
-Codex Timeline captures the repository after each completed Codex tool call, stores the snapshots as commits on hidden Git refs, and renders that history as a browsable codebase at each point in time. Your branch, `HEAD`, and staging area are left alone.
+## What you get
 
-## What it shows
+- One continuous change sequence across future Codex tasks.
+- Existing Git history imported as `#001`, `#002`, and so on.
+- A complete repository tree and full source files at every event.
+- Bold green additions, red deletions, and amber modified files.
+- Added and removed lines interleaved in their original full-file context.
+- Per-line annotations showing which event introduced the current line.
+- Hidden Codex session, turn, tool, and tool-use context for diagnostics.
+- Automatic recording in every Git repository unless explicitly disabled.
 
-- A chronological event list containing existing Git commits followed by state-changing Codex tool calls.
-- The entire repository tree and complete source files as they existed at each event.
-- Added and removed lines interleaved in full-file context, highlighted with `+` and `-` gutter signs.
-- Two-character signs beside current lines: `01`, `02`, and so on identify the event that introduced each line.
-- Navigation between annotated lines with `]t` and `[t`.
-- One continuous project timeline across future Codex tasks, with legacy and explicitly named timelines still selectable.
-
-The event order is exact at the tool-call level. Codex applies patches or writes files atomically, so this cannot reconstruct fictional keystroke order inside a single tool call.
-
-## Architecture
-
-```text
-Codex lifecycle hook -> isolated Git snapshot -> refs/codex-timeline/session-project
-                                                    |
-Neovim signs and timeline UI <----------------------+
-```
-
-Snapshots use a temporary Git index. That isolation is what lets the recorder capture tracked, untracked, renamed, and deleted files without staging anything in your working repository.
+Timeline stores snapshots on isolated Git refs using a temporary index. Normal commits, branches, checkout state, and staged changes remain untouched.
 
 ## Requirements
 
-- Git 2.20+
-- Neovim 0.10+
-- Python 3 for the hook adapter and installer
-- Codex lifecycle hooks
+- Neovim 0.10 or newer
+- Git 2.20 or newer
+- Python 3 for the Codex hook installer and adapter
+- Codex with lifecycle-hook support
 
-## Install
+## Installation
 
-With lazy.nvim, add the local plugin:
+### lazy.nvim
+
+Add this to your Neovim plugin configuration:
 
 ```lua
 {
-  dir = "/absolute/path/to/diff-display",
-  name = "codex-timeline",
+  "ketiyohannes/timeline",
+  name = "timeline",
+  lazy = false,
   config = function()
-    require("codex_timeline").setup()
+    require("timeline").setup()
   end,
 }
 ```
 
-Install the global hook adapter. The installer preserves unrelated handlers and writes a timestamped backup:
+Restart Neovim and run `:Lazy sync`.
 
-```sh
-./bin/install-codex-hook
-```
-
-Restart Codex. Recording starts automatically in every Git repository Codex works in—existing or new. Opening an existing repository in Neovim imports every commit reachable from its current `HEAD` into the Changes pane, preserving commit order, messages, full codebase snapshots, and highlighted diffs. The root commit is `#001`. If modified or untracked files exist at synchronization time, that complete local state becomes the next numbered `existing project baseline` entry. Subsequent state-changing Codex tool calls continue the same numbering.
-
-Timelines created by the previous single-baseline version are migrated automatically when they contain only that initial baseline. Git provides commit-level ordering for old history; it cannot reconstruct the order of individual edits inside an old commit.
-
-Automatic events from every future Codex task append to one continuous repository-local ref, `refs/codex-timeline/session-project`. The hidden commits retain the originating Codex session, turn, tool, and tool-use IDs, even though the Neovim interface intentionally displays only the change number, readable message, and code.
-
-To synchronize explicitly instead of waiting for file-open detection:
+Then install the Codex lifecycle hooks directly from Neovim:
 
 ```vim
-:CodexTimelineSync
+:TimelineInstallHooks
 ```
 
-or:
+The installer merges Timeline into `~/.codex/hooks.json`, preserves unrelated handlers, and creates a timestamped backup. Restart Codex after installing or changing hooks.
+
+### Manual local installation
 
 ```sh
-bin/codex-timeline sync --repo /path/to/existing/project
+git clone https://github.com/ketiyohannes/timeline.git ~/.local/share/timeline
+cd ~/.local/share/timeline
+./bin/install-hooks
 ```
 
-To exclude a repository, run `:CodexTimelineDisable` in Neovim or:
-
-```sh
-./bin/codex-timeline disable --repo /path/to/project
-```
-
-## Use
-
-Open a tracked project in Neovim and run:
-
-| Command | Action |
-|---|---|
-| `:CodexTimeline` | Browse the codebase snapshot for each ordered event |
-| `:CodexTimelineAnnotate` | Refresh line annotations |
-| `:CodexTimelineSession` | Select a different recorded session |
-| `:CodexTimelineClear` | Remove annotations |
-| `:CodexTimelineEnable` / `:CodexTimelineDisable` | Resume or exclude this repository |
-| `:CodexTimelineSync` | Import existing commits and synchronize the current project state |
-| `]t` / `[t` | Jump to next/previous annotated line |
-
-Inside the snapshot browser:
-
-- The left pane contains only the change number and commit message.
-- The middle pane contains every file in the codebase at that time; files touched by the selected event are highlighted.
-- The right pane contains the complete selected file. Added lines use a bold green `+` treatment; removed lines use a bold red `-` treatment. Modified files use amber, and the palette adapts to dark or light backgrounds.
-- Use `j`/`k` to traverse changes or files, `Enter` to move right, `1`/`2`/`3` to focus a pane, `[c`/`]c` to change events from any pane, `r` to refresh, and `q` to close.
-
-Optional configuration:
+Point your plugin manager at the clone:
 
 ```lua
-require("codex_timeline").setup({
+{
+  dir = vim.fn.expand("~/.local/share/timeline"),
+  name = "timeline",
+  lazy = false,
+  config = function()
+    require("timeline").setup()
+  end,
+}
+```
+
+## Verify the installation
+
+Open a file inside a Git repository and run:
+
+```vim
+:checkhealth timeline
+```
+
+A healthy setup reports that Git and Neovim are available, automatic recording is enabled, and the repository is synchronized.
+
+Then open the browser:
+
+```vim
+:Timeline
+```
+
+If you installed hooks while Codex was already running, restart Codex before testing a new recorded change.
+
+## Commands
+
+| Command | Description |
+|---|---|
+| `:Timeline` | Open the chronological codebase browser |
+| `:TimelineSync` | Import existing commits and synchronize current local state |
+| `:TimelineAnnotate` | Show the event that introduced each current line |
+| `:TimelineSession` | Select a continuous, demo, or legacy timeline |
+| `:TimelineClear` | Clear line annotations |
+| `:TimelineEnable` | Enable automatic recording for this repository |
+| `:TimelineDisable` | Disable automatic recording for this repository |
+| `:TimelineInstallHooks` | Safely install Codex lifecycle hooks |
+| `:TimelineUninstallHooks` | Remove only Timeline's Codex hooks |
+| `]t` / `[t` | Jump to the next or previous annotated line |
+
+The old `:CodexTimeline*` commands remain as compatibility aliases, but new configurations should use `:Timeline*`.
+
+## Browser navigation
+
+The browser contains three panes:
+
+1. **Changes** — the ordered change number and message only.
+2. **Codebase** — every file that existed at the selected event.
+3. **Code** — the complete selected file with event-local changes highlighted.
+
+Keys:
+
+| Key | Action |
+|---|---|
+| `j` / `k` | Move through changes or files |
+| `Enter` | Move from Changes to Codebase, then to Code |
+| `1` / `2` / `3` | Focus a pane directly |
+| `[c` / `]c` | Select the previous or next event from any pane |
+| `r` | Refresh the browser |
+| `q` / `Esc` | Close the browser |
+
+Changed files are selected automatically. Added files are green, deleted files are red, and modified files are amber. Deleted files remain visible at their deletion event so their complete previous content can be inspected.
+
+## How synchronization works
+
+When Timeline first sees an existing repository, it imports every commit reachable from the current `HEAD` in deterministic parent-before-child order. The root commit is `#001`, and all of its lines are treated as additions.
+
+If modified or untracked files exist at synchronization time, their complete state becomes the next `existing project baseline` event. Git cannot recover edit order inside an old commit; imported history therefore has commit-level ordering. Future Codex activity has tool-call-level ordering.
+
+Codex lifecycle hooks capture a pending label before each tool call and create a snapshot after successful completion. Different Codex tasks append to the same continuous project timeline rather than resetting the numbering.
+
+Ignored files are excluded. A snapshot covers every non-ignored worktree change present at checkpoint time, so Git cannot prove whether a concurrent non-Codex process made a particular edit.
+
+## Configuration
+
+```lua
+require("timeline").setup({
   annotate_on_buf_enter = true,
   auto_sync = true,
   virtual_text = false,
@@ -109,10 +148,10 @@ require("codex_timeline").setup({
 })
 ```
 
-The built-in palette can be tuned without replacing highlight groups:
+Palette overrides:
 
 ```lua
-require("codex_timeline").setup({
+require("timeline").setup({
   colors = {
     add_bg = "#123D2A",
     add_fg = "#8AFF80",
@@ -120,54 +159,112 @@ require("codex_timeline").setup({
     delete_fg = "#FF6B8A",
     change_bg = "#44391F",
     change_fg = "#FFD866",
+    accent_bg = "#27365F",
     accent_fg = "#8AADF4",
   },
 })
 ```
 
-Colors are reapplied after `:colorscheme`. Advanced configurations can override the `CodexTimeline*` highlight groups after setup.
+The default palette adapts to dark and light backgrounds and is restored after `:colorscheme`.
 
 ## Recorder CLI
 
-```sh
-bin/codex-timeline status --repo .
-bin/codex-timeline sync --repo .
-bin/codex-timeline sessions --repo .
-bin/codex-timeline list --repo . --session SESSION_ID
-bin/codex-timeline diff 3 --repo . --session SESSION_ID
-bin/codex-timeline context 3 --repo . --session project
-bin/codex-timeline disable --repo .
-```
-
-The continuous automatic timeline is stored at `refs/codex-timeline/session-project`; explicitly named demonstration or legacy timelines use `refs/codex-timeline/session-<name>`. Temporary state lives inside `.git/codex-timeline/`. Normal commits, checkout, and staging remain untouched.
-
-To remove the global hooks while preserving other handlers:
+The `timeline` script is also useful for diagnostics and automation:
 
 ```sh
-./bin/install-codex-hook --uninstall
+./bin/timeline status --repo .
+./bin/timeline sync --repo .
+./bin/timeline sessions --repo .
+./bin/timeline list --repo . --session project
+./bin/timeline diff 3 --repo . --session project
+./bin/timeline files 3 --repo . --session project
+./bin/timeline context 3 --repo . --session project
+./bin/timeline disable --repo .
 ```
 
-To delete one recorded session:
+For backward compatibility, `bin/codex-timeline` delegates to `bin/timeline`.
+
+## Storage and safety
+
+Timeline uses the existing internal namespace `refs/codex-timeline/` so upgrades preserve previously recorded sessions. Temporary locks and pending tool state live below `.git/codex-timeline/`.
+
+Snapshots are created with an isolated `GIT_INDEX_FILE` and advanced with atomic `git update-ref` operations. Timeline does not run checkout or stage files in the repository's normal index.
+
+These refs are not pushed by a normal `git push`.
+
+## Upgrade notes
+
+Timeline is the renamed successor to Codex Timeline. Existing installations keep working:
+
+- `require("codex_timeline")` remains supported.
+- `:CodexTimeline*` commands remain aliases.
+- previously installed hook paths delegate to the renamed scripts.
+- existing hidden refs and recorded events remain readable.
+
+New configuration should use `require("timeline")`, `:Timeline`, and `bin/timeline`.
+
+Run `:TimelineInstallHooks` once after upgrading so `hooks.json` uses the new executable path. The installer removes the old Timeline handler entries before adding the new ones.
+
+## Uninstall
+
+Remove Timeline's Codex hooks:
+
+```vim
+:TimelineUninstallHooks
+```
+
+or:
 
 ```sh
-git update-ref -d refs/codex-timeline/session-SESSION_ID
+./bin/install-hooks --uninstall
 ```
 
-## Testing
+Then remove the plugin from your Neovim configuration. Recorded refs are intentionally left in each repository. To remove one manually:
+
+```sh
+git update-ref -d refs/codex-timeline/session-project
+```
+
+## Troubleshooting
+
+### `:Timeline` is not a command
+
+Confirm the plugin is installed and loaded with `lazy = false`, then restart Neovim. Run `:Lazy log` if lazy.nvim reports an installation error.
+
+### No future Codex changes appear
+
+Run `:TimelineInstallHooks`, restart Codex, and check:
+
+```vim
+:checkhealth timeline
+```
+
+Make sure recording was not disabled with `:TimelineDisable`.
+
+### Existing commits do not appear
+
+Run `:TimelineSync` from a buffer inside the repository, close the browser, and reopen it with `:Timeline`.
+
+### Git state safety
+
+You can verify that Timeline has not changed normal repository state:
+
+```sh
+git status
+git branch --show-current
+git diff --cached
+```
+
+## Development
 
 ```sh
 make test
 ```
 
-The suite verifies existing commit-history import, legacy-baseline migration, continuous ordering across Codex tasks, stored Codex context, automatic recording, explicit opt-out, snapshot ordering, no-op deduplication, branch and index isolation, installer coexistence/idempotency, full codebase snapshots, metadata-free source views, and line highlighting.
+The suite covers recorder isolation, existing-history import, cross-task Codex ordering, hook installation coexistence and idempotency, Neovim integration, full codebase reconstruction, diff highlighting, dark/light palettes, and legacy compatibility.
 
-Run `:checkhealth codex_timeline` inside Neovim to diagnose Git availability, repository opt-in, and timeline discovery.
+The same suite runs on every push and pull request through GitHub Actions.
 
-## Caveats
+## License
 
-- The snapshot covers all non-ignored worktree changes present when a checkpoint is taken. Git alone cannot prove whether Codex or another process made a concurrent edit.
-- Existing commits retain Git's commit-level ordering. Edit order inside a commit is not recoverable.
-- Ignored files are intentionally excluded.
-- Hooks are a useful observation boundary, not a security boundary; specialized Codex tool paths may opt out of normal tool hooks.
-
-Codex hook behavior and payload fields follow the [official lifecycle-hooks documentation](https://learn.chatgpt.com/docs/hooks).
+MIT — see [LICENSE](LICENSE).

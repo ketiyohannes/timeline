@@ -17,7 +17,8 @@ local syncing_roots = {}
 local project_ref = "refs/codex-timeline/session-project"
 local module_path = debug.getinfo(1, "S").source:sub(2)
 local plugin_root = vim.fn.fnamemodify(module_path, ":p:h:h:h")
-local recorder = plugin_root .. "/bin/codex-timeline"
+local recorder = plugin_root .. "/bin/timeline"
+local hook_installer = plugin_root .. "/bin/install-hooks"
 
 local function root_for_current_buffer()
   local name = vim.api.nvim_buf_get_name(0)
@@ -34,7 +35,7 @@ local function sync_root(root, notify_user, callback)
   end
   if synced_roots[root] then
     if notify_user then
-      vim.notify("Codex Timeline is synchronized with this repository")
+      vim.notify("Timeline is synchronized with this repository")
     end
     if callback then callback(true) end
     return
@@ -48,7 +49,7 @@ local function sync_root(root, notify_user, callback)
   end
   if vim.fn.executable(recorder) ~= 1 then
     if notify_user then
-      vim.notify("Codex Timeline recorder is not executable: " .. recorder, vim.log.levels.ERROR)
+      vim.notify("Timeline recorder is not executable: " .. recorder, vim.log.levels.ERROR)
     end
     if callback then callback(false) end
     return
@@ -65,11 +66,11 @@ local function sync_root(root, notify_user, callback)
       if result.code == 0 then
         synced_roots[root] = true
         if pending.notify then
-          vim.notify("Codex Timeline synchronized existing commits and future Codex changes")
+          vim.notify("Timeline synchronized existing commits and future Codex changes")
         end
       else
         if pending.notify then
-          vim.notify("Codex Timeline sync failed: " .. vim.trim(result.stderr or "unknown error"), vim.log.levels.ERROR)
+          vim.notify("Timeline sync failed: " .. vim.trim(result.stderr or "unknown error"), vim.log.levels.ERROR)
         end
       end
       for _, queued_callback in ipairs(pending.callbacks) do
@@ -184,7 +185,7 @@ end
 function M.select_session()
   local root = root_for_current_buffer()
   if not root then
-    vim.notify("Codex Timeline: current buffer is not in a Git repository", vim.log.levels.WARN)
+    vim.notify("Timeline: current buffer is not in a Git repository", vim.log.levels.WARN)
     return
   end
   ui.select_session(function(ref)
@@ -197,21 +198,21 @@ end
 function M.set_enabled(enabled)
   local root = root_for_current_buffer()
   if not root then
-    vim.notify("Codex Timeline: current directory is not in a Git repository", vim.log.levels.WARN)
+    vim.notify("Timeline: current directory is not in a Git repository", vim.log.levels.WARN)
     return
   end
   local ok, err = git.set_enabled(root, enabled)
   if not ok then
-    vim.notify("Codex Timeline: " .. (err or "unable to update Git config"), vim.log.levels.ERROR)
+    vim.notify("Timeline: " .. (err or "unable to update Git config"), vim.log.levels.ERROR)
     return
   end
-  vim.notify("Codex Timeline recording " .. (enabled and "enabled" or "disabled") .. " for " .. root)
+  vim.notify("Timeline recording " .. (enabled and "enabled" or "disabled") .. " for " .. root)
 end
 
 function M.sync()
   local root = root_for_current_buffer()
   if not root then
-    vim.notify("Codex Timeline: current buffer is not in a Git repository", vim.log.levels.WARN)
+    vim.notify("Timeline: current buffer is not in a Git repository", vim.log.levels.WARN)
     return
   end
   sync_root(root, true, function(ok)
@@ -219,11 +220,37 @@ function M.sync()
   end)
 end
 
+local function configure_hooks(uninstall)
+  if vim.fn.executable(hook_installer) ~= 1 then
+    vim.notify("Timeline hook installer is not executable: " .. hook_installer, vim.log.levels.ERROR)
+    return
+  end
+  local args = { hook_installer }
+  if uninstall then
+    args[#args + 1] = "--uninstall"
+  end
+  vim.system(args, { text = true }, function(result)
+    vim.schedule(function()
+      local output = vim.trim(result.code == 0 and result.stdout or result.stderr)
+      vim.notify(output ~= "" and output or (result.code == 0 and "Timeline hooks updated" or "Timeline hook update failed"),
+        result.code == 0 and vim.log.levels.INFO or vim.log.levels.ERROR)
+    end)
+  end)
+end
+
+function M.install_hooks()
+  configure_hooks(false)
+end
+
+function M.uninstall_hooks()
+  configure_hooks(true)
+end
+
 function M.setup(opts)
   config = vim.tbl_deep_extend("force", config, opts or {})
   highlights.apply(config.colors)
 
-  local group = vim.api.nvim_create_augroup("CodexTimeline", { clear = true })
+  local group = vim.api.nvim_create_augroup("Timeline", { clear = true })
   vim.api.nvim_create_autocmd("ColorScheme", {
     group = group,
     callback = function() highlights.apply(config.colors) end,

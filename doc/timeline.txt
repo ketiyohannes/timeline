@@ -1,0 +1,94 @@
+*timeline.txt*                  Chronological Codex changes for Neovim
+
+==============================================================================
+INTRODUCTION                                                    *timeline*
+
+Timeline records the repository after each observed Codex tool call in an
+isolated Git ref, then presents those changes chronologically in Neovim. It
+imports existing Git history and never checks out a snapshot or uses the
+repository's normal index.
+
+==============================================================================
+COMMANDS                                                  *timeline-commands*
+
+:Timeline
+    Open the three-pane snapshot browser. Changes shows ordered messages,
+    Codebase shows every file at the event, and Code shows the complete file
+    with bold + and - highlights.
+
+    Press <CR> to move right, 1/2/3 to focus a pane, [c and ]c to traverse
+    events, r to refresh, and q or <Esc> to close.
+
+:TimelineSync
+    Import the current HEAD's reachable commit history, then capture modified
+    and untracked state. This also happens automatically on first file open.
+
+:TimelineAnnotate
+    Add signs to current lines. "01" means event 1 introduced the line.
+
+:TimelineClear
+    Remove signs from the current buffer.
+
+:TimelineSession
+    Choose among the continuous project, demo, and legacy timelines.
+
+:TimelineEnable / :TimelineDisable
+    Resume or explicitly disable automatic recording for this repository.
+
+:TimelineInstallHooks / :TimelineUninstallHooks
+    Safely add or remove Timeline's Codex lifecycle handlers. Unrelated hooks
+    are preserved and hooks.json is backed up before each change. Restart
+    Codex after installing hooks.
+
+]t / [t
+    Jump to the next or previous annotated line.
+
+==============================================================================
+SETUP                                                        *timeline-setup*
+
+>lua
+    require("timeline").setup({
+      annotate_on_buf_enter = true,
+      auto_sync = true,
+      virtual_text = false,
+      session = nil,
+      colors = {},
+    })
+<
+
+With lazy.nvim:
+>lua
+    {
+      "ketiyohannes/timeline",
+      lazy = false,
+      config = function()
+        require("timeline").setup()
+      end,
+    }
+<
+
+After :Lazy sync, run |:TimelineInstallHooks| and restart Codex. Verify with:
+>
+    :checkhealth timeline
+<
+
+The palette adapts to dark and light backgrounds. Pass add_bg, add_fg,
+delete_bg, delete_fg, change_bg, change_fg, accent_bg, or accent_fg in
+`colors` to customize it.
+
+==============================================================================
+STORAGE                                                     *timeline-storage*
+
+The continuous project history lives at
+refs/codex-timeline/session-project. This internal namespace is retained for
+compatibility with releases published under the old Codex Timeline name.
+Pending state and locks live below .git/codex-timeline/.
+
+Existing Git history has commit-level ordering. Future Codex changes have
+completed-tool-call ordering. Snapshots include non-ignored tracked,
+untracked, renamed, and deleted files without modifying HEAD or the index.
+
+The deprecated |:CodexTimeline| commands and require("codex_timeline") remain
+available for existing configurations.
+
+vim:tw=78:ts=8:noet:ft=help:norl:

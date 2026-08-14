@@ -1,7 +1,7 @@
-local root = assert(vim.env.CODEX_TIMELINE_PROJECT)
-local session = assert(vim.env.CODEX_TIMELINE_SESSION)
+local root = assert(vim.env.TIMELINE_PROJECT)
+local session = assert(vim.env.TIMELINE_SESSION)
 
-local timeline = require("codex_timeline")
+local timeline = require("timeline")
 timeline.setup({ auto_sync = false, annotate_on_buf_enter = false, session = session })
 vim.cmd.edit(vim.fn.fnameescape(root .. "/README.md"))
 timeline.annotate()

@@ -1,8 +1,8 @@
-local project_root = assert(vim.env.CODEX_TIMELINE_PROJECT)
-local test_repo = assert(vim.env.CODEX_TIMELINE_TEST_REPO)
+local project_root = assert(vim.env.TIMELINE_PROJECT)
+local test_repo = assert(vim.env.TIMELINE_TEST_REPO)
 vim.opt.runtimepath:prepend(project_root)
 
-local timeline = require("codex_timeline")
+local timeline = require("timeline")
 timeline.setup({ auto_sync = true, annotate_on_buf_enter = false })
 vim.cmd.cd(vim.fn.fnameescape(test_repo))
 timeline.open()
@@ -15,7 +15,7 @@ assert(synchronized, "existing repository was not synchronized on first open")
 local opened = vim.wait(5000, function()
   return #require("codex_timeline.ui")._state.events == 4
 end, 25)
-assert(opened, ":CodexTimeline did not open the imported commit history and synchronization snapshot")
+assert(opened, ":Timeline did not open the imported commit history and synchronization snapshot")
 local events = require("codex_timeline.ui")._state.events
 assert(events[1].sequence == 1 and events[1].subject == "create existing project", "root commit was not imported as #1")
 assert(events[2].sequence == 2 and events[2].subject == "add project settings", "second commit was not imported as #2")
@@ -27,7 +27,7 @@ local _, root_highlights = assert(git.file_snapshot(test_repo, events[1], "exist
 assert(#root_highlights > 0 and root_highlights[1].kind == "add", "root commit lines were not highlighted")
 assert(
   require("codex_timeline.ui")._state.ref == "refs/codex-timeline/session-project",
-  ":CodexTimeline did not prefer the continuous project timeline over a legacy ref"
+  ":Timeline did not prefer the continuous project timeline over a legacy ref"
 )
 require("codex_timeline.ui").close()
 

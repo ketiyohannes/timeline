@@ -1,0 +1,20 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Neovim 0.10
+        uses: rhysd/action-setup-vim@v1
+        with:
+          version: v0.10.4
+      - name: Run test suite
+        run: make test
