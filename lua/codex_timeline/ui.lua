@@ -438,6 +438,98 @@ function M.toggle_code_search_scope()
   M.search_code(state.code_search.query)
 end
 
+local function editor_match_location(buffer, match, query)
+  local lines = vim.api.nvim_buf_get_lines(buffer, 0, -1, false)
+  if #lines == 0 then
+    return 1, 0
+  end
+  local fallback_line = math.max(1, math.min(match.line, #lines))
+  if query == "" or query:match("^:%d+$") then
+    return fallback_line, math.min(match.start_col or 0, #lines[fallback_line])
+  end
+
+  local needle = query:lower()
+  local best_line, best_col, best_distance
+  for line_number, line in ipairs(lines) do
+    local searchable = line:lower()
+    local start_index = searchable:find(needle, 1, true)
+    while start_index do
+      local column = start_index - 1
+      local distance = math.abs(line_number - match.line) * 100000
+        + math.abs(column - (match.start_col or 0))
+      if not best_distance or distance < best_distance then
+        best_line, best_col, best_distance = line_number, column, distance
+      end
+      start_index = searchable:find(needle, start_index + #needle, true)
+    end
+  end
+  return best_line or fallback_line, best_col or 0
+end
+
+local function center_editor_cursor(line, column)
+  local window = vim.api.nvim_get_current_win()
+  vim.api.nvim_win_set_cursor(window, { line, column })
+  vim.api.nvim_win_call(window, function()
+    vim.cmd("normal! zz")
+  end)
+end
+
+function M.open_code_match()
+  local match = state.code_search.matches[state.code_search.index]
+  if not match then
+    vim.notify("Timeline: no code search result selected", vim.log.levels.INFO)
+    return false
+  end
+
+  local root = state.root
+  local event = state.event
+  local query = state.code_search.query
+  local snapshot_lines = get_file_snapshot(match.path) or { "" }
+  local full_path = root .. "/" .. match.path
+  local stat = vim.uv.fs_stat(full_path)
+  close()
+
+  if stat and stat.type == "file" then
+    local current_buffer = vim.api.nvim_get_current_buf()
+    local current_path = vim.api.nvim_buf_get_name(current_buffer)
+    local same_file = current_path ~= ""
+      and vim.fn.fnamemodify(current_path, ":p") == vim.fn.fnamemodify(full_path, ":p")
+    if not same_file then
+      local command = vim.bo[current_buffer].modified and "keepalt split " or "keepalt edit "
+      local ok, err = pcall(vim.cmd, command .. vim.fn.fnameescape(full_path))
+      if not ok then
+        vim.notify("Timeline: unable to open result: " .. tostring(err), vim.log.levels.ERROR)
+        return false
+      end
+    end
+    local buffer = vim.api.nvim_get_current_buf()
+    local line, column = editor_match_location(buffer, match, query)
+    center_editor_cursor(line, column)
+    return true
+  end
+
+  local name = string.format("timeline://%s/%s", event_marker(event), match.path)
+  local existing = vim.fn.bufnr(name)
+  if existing >= 0 and vim.api.nvim_buf_is_valid(existing) then
+    vim.cmd("keepalt sbuffer " .. existing)
+  else
+    vim.cmd("keepalt new")
+    local buffer = vim.api.nvim_get_current_buf()
+    vim.api.nvim_buf_set_name(buffer, name)
+    vim.bo[buffer].buftype = "nofile"
+    vim.bo[buffer].bufhidden = "hide"
+    vim.bo[buffer].swapfile = false
+    vim.api.nvim_buf_set_lines(buffer, 0, -1, false, snapshot_lines)
+    vim.bo[buffer].filetype = vim.filetype.match({ filename = match.path }) or ""
+    vim.bo[buffer].modified = false
+    vim.bo[buffer].modifiable = false
+    vim.bo[buffer].readonly = true
+  end
+  center_editor_cursor(match.line, match.start_col or 0)
+  vim.notify("Timeline: opened historical file (not present in the worktree)", vim.log.levels.INFO)
+  return true
+end
+
 local function render_files(preferred_path)
   local buffer = state.buffers.files
   if not buffer or not vim.api.nvim_buf_is_valid(buffer) then
@@ -866,7 +958,16 @@ function M.toggle_search_bar(role)
     vim.cmd("stopinsert")
     close_search_bar(role)
   end
-  vim.keymap.set("i", "<CR>", finish_search, { buffer = buffer, silent = true, nowait = true })
+  local function accept_search()
+    vim.cmd("stopinsert")
+    if role == "code" and #state.code_search.matches > 0 then
+      M.open_code_match()
+    else
+      close_search_bar(role)
+    end
+  end
+  vim.keymap.set("i", "<CR>", accept_search, { buffer = buffer, silent = true, nowait = true })
+  vim.keymap.set("n", "<CR>", accept_search, { buffer = buffer, silent = true, nowait = true })
   vim.keymap.set("i", "<Esc>", finish_search, { buffer = buffer, silent = true, nowait = true })
   vim.keymap.set("i", "<C-c>", finish_search, { buffer = buffer, silent = true, nowait = true })
   vim.keymap.set("n", "q", function() close_search_bar(role) end, { buffer = buffer, silent = true })
@@ -1009,6 +1110,7 @@ function M.open(opts)
   map_all("C", function() M.search_code() end, "Search code in selected historical snapshot")
   map_all("[s", function() M.next_code_match(-1) end, "Previous code search match")
   map_all("]s", function() M.next_code_match(1) end, "Next code search match")
+  map_all("o", function() M.open_code_match() end, "Open selected code search result in editor")
   map_all("1", function() focus("changes") end, "Focus recorded changes")
   map_all("2", function() focus("files") end, "Focus snapshot codebase")
   map_all("3", function() focus("source") end, "Focus snapshot source")

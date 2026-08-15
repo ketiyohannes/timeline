@@ -276,10 +276,13 @@ ui.toggle_search_bar("code")
 code_bar = assert(ui_state.search_bars.code, "scoped code search bar did not open")
 assert(window_title(code_bar.window):find("this file", 1, true), "code search did not default to this file")
 local has_tab_mapping = false
+local has_enter_mapping = false
 for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(code_bar.buffer, "i")) do
   if mapping.lhs == "<Tab>" then has_tab_mapping = true end
+  if mapping.lhs == "<CR>" then has_enter_mapping = true end
 end
 assert(has_tab_mapping, "code search bar does not expose the Tab scope toggle")
+assert(has_enter_mapping, "code search bar does not expose Enter to open the selected result")
 
 vim.api.nvim_buf_set_lines(code_bar.buffer, 0, -1, false, { "sharedSearchTarget" })
 vim.cmd.doautocmd("TextChangedI")
@@ -352,7 +355,35 @@ local earlier_source = vim.api.nvim_buf_get_lines(roles.source, 0, -1, false)
 assert(earlier_source[1] == "alpha" and earlier_source[2] == "beta", "earlier source snapshot was not reconstructed")
 local earlier_marks = vim.api.nvim_buf_get_extmarks(roles.source, snapshot_namespace, 0, -1, { details = true })
 assert(#earlier_marks == 1 and vim.trim(earlier_marks[1][4].sign_text) == "+", "earlier addition highlight is wrong")
-ui.close()
+
+-- Confirming a code result exits the floating browser and opens the real file
+-- at the matching code in the normal editor.
+ui.search_code("alpha")
+ui.toggle_search_bar("code")
+local accept_result
+for _, mapping in ipairs(vim.api.nvim_buf_get_keymap(ui_state.search_bars.code.buffer, "i")) do
+  if mapping.lhs == "<CR>" then accept_result = mapping.callback end
+end
+assert(type(accept_result) == "function", "code search Enter mapping has no action")
+accept_result()
+assert(
+  vim.uv.fs_realpath(vim.api.nvim_buf_get_name(0)) == vim.uv.fs_realpath(test_repo .. "/example.txt"),
+  "code result opened the wrong worktree file: " .. vim.api.nvim_buf_get_name(0)
+)
+assert(vim.api.nvim_win_get_cursor(0)[1] == 1, "editor did not jump to the matching worktree code")
+assert(next(ui_state.windows) == nil, "Timeline windows remained open after accepting a code result")
+
+-- Deleted historical results open read-only in a normal editor buffer instead
+-- of silently recreating a missing worktree file.
+timeline.open()
+ui.search_code("stable")
+ui.toggle_code_search_scope()
+assert(ui_state.code_search.matches[1].path == "unchanged.txt", "deleted result was not selected")
+assert(ui.open_code_match(), "deleted historical result did not open")
+assert(vim.api.nvim_buf_get_name(0):find("timeline://", 1, true) == 1, "deleted result is not a historical buffer")
+assert(vim.api.nvim_buf_get_lines(0, 0, 1, false)[1] == "stable", "historical editor buffer has wrong code")
+assert(vim.bo.readonly and not vim.bo.modifiable and not vim.bo.modified, "historical editor buffer is not safely read-only")
+assert(vim.uv.fs_stat(test_repo .. "/unchanged.txt") == nil, "opening a deleted result recreated the file")
 
 -- Commands invoked from virtual buffers (including :checkhealth output) must
 -- fall back to Neovim's cwd instead of using a health:// URI as a process cwd.

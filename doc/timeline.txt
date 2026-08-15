@@ -25,7 +25,9 @@ COMMANDS                                                  *timeline-commands*
     selected commit and [f or ]f to move through file matches. See
     |timeline-file-search|. Press C to search historical source, <Tab> in its
     search bar to switch between the opened file and every file in the selected
-    commit, and [s or ]s to move through code matches. See
+    commit, and [s or ]s to move through code matches. Press <CR> in the code
+    search bar, or o after hiding it, to open the selected result in the normal
+    editor. See
     |timeline-code-search|. The panes resize with the editor. Selecting a
     changed file scrolls its complete source snapshot so its first highlighted
     line is at the top of Code.
@@ -156,11 +158,18 @@ files exactly as Code displays them, including event-local removed lines.
 Selecting a result automatically opens its path in Codebase and centers the
 matching line in Code.
 
-Press <CR> or <Esc> to hide the bar and retain highlights. Use ]s for the next
-occurrence or [s for the previous occurrence from any pane; navigation wraps.
-Navigation crosses files in "all files" scope. Delete all query text to clear
-highlights. Manually selecting another file or commit clears code search and
-resets its scope to "this file" so results never leak into another snapshot.
+Press <CR> to accept the active result. Timeline closes, opens the repository
+file in the normal Neovim editor, and centers the matching code. If lines have
+shifted since the selected commit, the closest current occurrence is used. If
+the historical file no longer exists, its exact snapshot opens in a read-only
+normal buffer rather than recreating the file.
+
+Press <Esc> to hide the bar without leaving Timeline, then press o from any
+Timeline pane to open the retained result. Use ]s for the next occurrence or
+[s for the previous occurrence; navigation wraps and crosses files in "all
+files" scope. Delete all query text to clear highlights. Manually selecting
+another file or commit clears code search and resets its scope to "this file"
+so results never leak into another snapshot.
 
 ==============================================================================
 SETUP                                                        *timeline-setup*

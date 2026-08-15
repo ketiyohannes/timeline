@@ -118,7 +118,7 @@ Keys:
 | Key | Action |
 |---|---|
 | `j` / `k` | Move through changes or files |
-| `Enter` | Move from Changes to Codebase, then to Code |
+| `Enter` (panes) | Move from Changes to Codebase, then to Code |
 | `1` / `2` / `3` | Focus a pane directly |
 | `[c` / `]c` | Select the previous or next event from any pane |
 | `/` | Toggle real-time commit search |
@@ -127,6 +127,8 @@ Keys:
 | `[f` / `]f` | Jump to the previous or next file match |
 | `C` | Toggle real-time code search for the opened file or selected commit |
 | `Tab` | Toggle `This file` / `All files` while the code-search bar is open |
+| `Enter` (Code search) | Open the active result in the normal editor |
+| `o` | Open the active result after the code-search bar has been hidden |
 | `[s` / `]s` | Jump to the previous or next code match |
 | `r` | Refresh the browser |
 | `q` / `Esc` | Close the browser |
@@ -207,7 +209,9 @@ Unlike commit and file search, code search never removes nonmatching source line
 
 In **All files** scope, Timeline searches every file in that historical snapshot—not the current working tree. Unchanged files are included, and modified or deleted files are searched exactly as Code displays them, including removed lines. Choosing a result, or using `]s` and `[s`, automatically selects the matching path in Codebase and centers its line in Code.
 
-The `:300` form always jumps to line 300 of the currently opened file, regardless of scope. Press `Enter` or `Esc` to hide the bar while retaining its highlights. Use `]s` and `[s` from any pane to move through occurrences with wraparound. Delete all search text to clear the highlights. Manually selecting another file or commit clears code search and resets its scope to **This file**.
+The `:300` form always jumps to line 300 of the currently opened file, regardless of scope. Press `Enter` to accept the active result: Timeline closes, the repository file opens in the normal Neovim editor, and the matching code is centered. If its lines have shifted since that commit, Timeline finds the closest current occurrence. If the historical file has been deleted, it opens the exact snapshot in a read-only normal buffer instead of recreating the file.
+
+Press `Esc` to hide the bar without leaving Timeline. You can then press `o` from any Timeline pane to open the active result in the editor. Use `]s` and `[s` to move through occurrences with wraparound. Delete all search text to clear the highlights. Manually selecting another file or commit clears code search and resets its scope to **This file**.
 
 ## How synchronization works
 
