@@ -9,6 +9,8 @@ local config = {
   auto_sync = true,
   virtual_text = false,
   session = nil,
+  live_refresh = true,
+  refresh_interval = 750,
   colors = {},
 }
 local selected_refs = {}
@@ -167,18 +169,22 @@ end
 
 function M.open()
   local root = root_for_current_buffer()
+  local live_options = {
+    live_refresh = config.live_refresh,
+    refresh_interval = config.refresh_interval,
+  }
   if root and config.auto_sync and not selected_refs[root] and not config.session and not synced_roots[root] then
     sync_root(root, true, function(ok)
-      if ok then ui.open({ ref = project_ref }) end
+      if ok then ui.open(vim.tbl_extend("force", live_options, { ref = project_ref })) end
     end)
     return
   end
   if root and selected_refs[root] then
-    ui.open({ ref = selected_refs[root] })
+    ui.open(vim.tbl_extend("force", live_options, { ref = selected_refs[root] }))
   elseif root and not config.session and git.has_ref(root, project_ref) then
-    ui.open({ ref = project_ref })
+    ui.open(vim.tbl_extend("force", live_options, { ref = project_ref }))
   else
-    ui.open({ session = config.session })
+    ui.open(vim.tbl_extend("force", live_options, { session = config.session }))
   end
 end
 
@@ -191,7 +197,11 @@ function M.select_session()
   ui.select_session(function(ref)
     selected_refs[root] = ref
     M.annotate()
-    ui.open({ ref = ref })
+    ui.open({
+      ref = ref,
+      live_refresh = config.live_refresh,
+      refresh_interval = config.refresh_interval,
+    })
   end)
 end
 

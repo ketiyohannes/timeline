@@ -30,6 +30,9 @@ local state = {
   code_search = empty_code_search(),
   snapshot_cache = {},
   navigating_code_search = false,
+  refresh_timer = nil,
+  refreshing = false,
+  refresh_interval = 750,
   search_bars = {},
 }
 
@@ -40,6 +43,15 @@ end
 local function close()
   local windows = state.windows
   local search_bars = state.search_bars
+  local refresh_timer = state.refresh_timer
+  state.refresh_timer = nil
+  state.refreshing = false
+  if refresh_timer then
+    refresh_timer:stop()
+    if not refresh_timer:is_closing() then
+      refresh_timer:close()
+    end
+  end
   state.windows = {}
   state.buffers = {}
   state.search_bars = {}
@@ -69,6 +81,10 @@ end
 
 local function event_marker(event)
   return event.sequence == 0 and "base" or string.format("#%03d", event.sequence)
+end
+
+local function same_event(left, right)
+  return left and right and left.hash == right.hash
 end
 
 local function dimensions()
@@ -652,7 +668,9 @@ local function render_event()
   if not event then
     return
   end
-  local event_changed = state.event ~= event
+  local previous_file = current_file()
+  local previous_file_query = state.file_search.query
+  local event_changed = not same_event(state.event, event)
   state.event = event
   if event_changed then
     state.file_search = { query = "", matches = {}, index = 0 }
@@ -678,14 +696,16 @@ local function render_event()
   table.sort(files)
   state.files, state.changes = files, changes
 
-  local selected
-  for _, path in ipairs(files) do
-    if changes[path] then
-      selected = path
-      break
+  local selected = not event_changed and previous_file or nil
+  if not selected then
+    for _, path in ipairs(files) do
+      if changes[path] then
+        selected = path
+        break
+      end
     end
   end
-  apply_file_filter("", selected)
+  apply_file_filter(event_changed and "" or previous_file_query, selected)
 end
 
 local function render_commits(preferred_event)
@@ -695,7 +715,7 @@ local function render_commits(preferred_event)
   end
   local selected = 1
   for index, event in ipairs(state.visible_events) do
-    if event == preferred_event then
+    if same_event(event, preferred_event) then
       selected = index
       break
     end
@@ -728,16 +748,16 @@ local function render_commits(preferred_event)
   render_event()
 end
 
-function M.search(query)
+function M.search(query, preferred_event)
   if query == nil then
     M.toggle_search_bar("commits")
     return
   end
   query = vim.trim(query)
-  local previous_event = state.event or current_event()
+  local previous_event = preferred_event or state.event or current_event()
   local previous_row = 1
   for row, event in ipairs(state.events) do
-    if event == previous_event then
+    if same_event(event, previous_event) then
       previous_row = row
       break
     end
@@ -760,7 +780,8 @@ function M.search(query)
   local preferred = previous_event
   local found = false
   for _, event in ipairs(visible) do
-    if event == preferred then
+    if same_event(event, preferred) then
+      preferred = event
       found = true
       break
     end
@@ -776,6 +797,50 @@ function M.search(query)
     preferred = preferred or visible[1]
   end
   render_commits(preferred)
+end
+
+function M.refresh()
+  if state.refreshing or not valid_window(state.windows.changes) or not state.root or not state.ref then
+    return false
+  end
+  local previous_tip = state.events[#state.events]
+  local tip_hash = git.ref_hash(state.root, state.ref)
+  if not tip_hash or (previous_tip and previous_tip.hash == tip_hash) then
+    return false
+  end
+
+  state.refreshing = true
+  local events, err = git.events(state.root, state.ref)
+  state.refreshing = false
+  if not events then
+    vim.notify("Timeline: " .. (err or "unable to refresh events"), vim.log.levels.ERROR)
+    return false
+  end
+
+  local selected = state.event or current_event()
+  local followed_latest = same_event(selected, previous_tip)
+  local preferred = followed_latest and events[#events] or selected
+  state.events = events
+  M.search(state.search.query, preferred)
+  return true
+end
+
+local function start_live_refresh(interval)
+  local timer = vim.uv.new_timer()
+  if not timer then
+    return
+  end
+  state.refresh_timer = timer
+  state.refresh_interval = math.max(100, tonumber(interval) or 750)
+  timer:start(state.refresh_interval, state.refresh_interval, vim.schedule_wrap(function()
+    if state.refresh_timer ~= timer or not valid_window(state.windows.changes) then
+      return
+    end
+    local ok, err = pcall(M.refresh)
+    if not ok then
+      vim.notify("Timeline: live refresh failed: " .. tostring(err), vim.log.levels.ERROR)
+    end
+  end))
 end
 
 function M.next_match(direction)
@@ -1125,6 +1190,9 @@ function M.open(opts)
     vim.api.nvim_win_set_cursor(state.windows.changes, { #events, 0 })
   end
   render_event()
+  if opts.live_refresh ~= false then
+    start_live_refresh(opts.refresh_interval)
+  end
 end
 
 function M.select_session(callback)

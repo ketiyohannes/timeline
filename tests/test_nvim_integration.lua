@@ -3,7 +3,12 @@ local test_repo = assert(vim.env.TIMELINE_TEST_REPO)
 vim.opt.runtimepath:prepend(project_root)
 
 local timeline = require("timeline")
-timeline.setup({ auto_sync = false, annotate_on_buf_enter = false, session = "nvim" })
+timeline.setup({
+  auto_sync = false,
+  annotate_on_buf_enter = false,
+  session = "nvim",
+  refresh_interval = 100,
+})
 vim.cmd.edit(vim.fn.fnameescape(test_repo .. "/example.txt"))
 timeline.annotate()
 
@@ -402,5 +407,51 @@ for _, window in ipairs(vim.api.nvim_list_wins()) do
 end
 assert(timeline_window_found, "timeline did not open from a virtual health buffer")
 require("codex_timeline.ui").close()
+
+-- An open browser follows a newly recorded snapshot without being closed and
+-- recalled. The selected latest event advances and reconstructs its changed file.
+vim.cmd.edit(vim.fn.fnameescape(test_repo .. "/example.txt"))
+timeline.open()
+local live_state = require("codex_timeline.ui")._state
+local previous_event_count = #live_state.events
+assert(live_state.refresh_timer, "live refresh watcher did not start")
+vim.fn.writefile({ "created while Timeline is open" }, test_repo .. "/live.txt")
+local checkpoint = vim.system({
+  project_root .. "/bin/timeline", "checkpoint",
+  "--repo", test_repo,
+  "--session", "nvim",
+  "--label", "live refresh",
+}, { text = true }):wait()
+assert(checkpoint.code == 0, "live refresh fixture checkpoint failed: " .. (checkpoint.stderr or ""))
+local refreshed = vim.wait(3000, function()
+  return #live_state.events == previous_event_count + 1
+end, 25)
+assert(refreshed, "open Timeline browser did not receive the new snapshot")
+assert(live_state.event.subject == "live refresh", "browser did not follow the new latest event")
+assert(vim.b[live_state.buffers.source].codex_timeline_path == "live.txt", "new snapshot file did not open live")
+assert(
+  vim.api.nvim_buf_get_lines(live_state.buffers.source, 0, 1, false)[1] == "created while Timeline is open",
+  "live snapshot source did not render"
+)
+
+vim.api.nvim_set_current_win(live_state.windows.changes)
+vim.api.nvim_win_set_cursor(live_state.windows.changes, { 1, 0 })
+vim.cmd.doautocmd("CursorMoved")
+local inspected_hash = live_state.event.hash
+vim.fn.writefile({ "another live snapshot" }, test_repo .. "/live-two.txt")
+local second_checkpoint = vim.system({
+  project_root .. "/bin/timeline", "checkpoint",
+  "--repo", test_repo,
+  "--session", "nvim",
+  "--label", "live refresh while browsing history",
+}, { text = true }):wait()
+assert(second_checkpoint.code == 0, "second live checkpoint failed: " .. (second_checkpoint.stderr or ""))
+local refreshed_in_history = vim.wait(3000, function()
+  return #live_state.events == previous_event_count + 2
+end, 25)
+assert(refreshed_in_history, "new snapshot did not appear while browsing an older event")
+assert(live_state.event.hash == inspected_hash, "live refresh moved an intentional historical selection")
+require("codex_timeline.ui").close()
+assert(live_state.refresh_timer == nil, "live refresh watcher survived browser close")
 
 print("neovim integration test passed")

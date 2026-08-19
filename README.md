@@ -135,6 +135,8 @@ Keys:
 
 Changed files are selected automatically. Added files are green, deleted files are red, and modified files are amber. Deleted files remain visible at their deletion event so their complete previous content can be inspected.
 
+While the browser is open, it watches the selected Timeline ref for new snapshots. A completed Codex tool call appears automatically—there is no need to close and run `:Timeline` again. If you were viewing the newest event, the browser follows the new one and opens its first changed file. If you were inspecting an older event, your selection stays in place. The `r` mapping remains available as a manual full reopen.
+
 The three panes resize and recenter automatically whenever the Neovim window changes size. The Code pane shows the change number and commit message in its title, with the opened repository-relative file path fixed directly beneath it. The path stays visible while the file scrolls and updates whenever another file is selected.
 
 When you select a changed file, the Code pane keeps the complete file loaded but scrolls so its first highlighted line is at the top of the viewport. A change beginning at line 300 therefore opens with line 300 visible first.
@@ -231,9 +233,13 @@ require("timeline").setup({
   auto_sync = true,
   virtual_text = false,
   session = nil,
+  live_refresh = true,
+  refresh_interval = 750,
   colors = {},
 })
 ```
+
+`refresh_interval` is measured in milliseconds and has a minimum of `100`. The watcher only checks the selected Git ref hash; source trees are rebuilt only when that hash changes. Set `live_refresh = false` to disable it.
 
 Palette overrides:
 
@@ -330,7 +336,7 @@ Make sure recording was not disabled with `:TimelineDisable`.
 
 ### Existing commits do not appear
 
-Run `:TimelineSync` from a buffer inside the repository, close the browser, and reopen it with `:Timeline`.
+Run `:TimelineSync` from a buffer inside the repository. An open browser updates automatically when synchronization finishes; otherwise, open it with `:Timeline`.
 
 ### Git state safety
 

@@ -19,7 +19,10 @@ COMMANDS                                                  *timeline-commands*
     See |timeline-code-header|.
 
     Press <CR> to move right, 1/2/3 to focus a pane, [c and ]c to traverse
-    events, r to refresh, and q or <Esc> to close. Press / from any pane to
+    events, r for a manual full reopen, and q or <Esc> to close. New recorded
+    snapshots appear automatically while the browser is open. If the newest
+    event was selected, Timeline follows the new event; an older selection is
+    preserved. Press / from any pane to
     search commit messages or change numbers, then n or N to move through
     matching commits. See |timeline-search|. Press F to search paths in the
     selected commit and [f or ]f to move through file matches. See
@@ -180,9 +183,16 @@ SETUP                                                        *timeline-setup*
       auto_sync = true,
       virtual_text = false,
       session = nil,
+      live_refresh = true,
+      refresh_interval = 750,
       colors = {},
     })
 <
+
+live_refresh watches the selected Timeline Git ref while the browser is open.
+refresh_interval is the polling interval in milliseconds and has a minimum of
+100. Only a changed ref causes the browser to rebuild source panes. Set
+live_refresh to false to disable the watcher.
 
 With lazy.nvim:
 >lua

@@ -46,6 +46,11 @@ function M.has_ref(root, ref)
   return output ~= nil
 end
 
+function M.ref_hash(root, ref)
+  local output = run({ "git", "rev-parse", "--verify", ref }, root)
+  return output and vim.trim(output) or nil
+end
+
 function M.enabled(root)
   local output = run({ "git", "config", "--bool", "--get", "codex.timeline.enabled" }, root)
   return output == nil or vim.trim(output) ~= "false"
