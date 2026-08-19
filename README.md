@@ -72,15 +72,27 @@ Point your plugin manager at the clone:
 
 ### Approve the Codex hooks
 
-In Codex's prompt or command input, enter:
+Open a terminal and start the Codex CLI:
+
+```sh
+codex
+```
+
+If the desktop app is installed on macOS but `codex` is not available on your `PATH`, use its bundled CLI:
+
+```sh
+"/Applications/ChatGPT.app/Contents/Resources/codex"
+```
+
+At the startup warning, choose **Review hooks**. You can also open the hook browser from the CLI by entering:
 
 ```text
 /hooks
 ```
 
-Open the `~/.codex/hooks.json` source, then review and trust every command whose path ends in `/bin/timeline-hook`. Timeline installs six handlers: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop`, and `SessionEnd`. Approve all six so Timeline can establish a baseline, record ordered tool changes, and flush pending changes when a task finishes.
+Open the `~/.codex/hooks.json` source, then review and trust every command whose path ends in `/bin/timeline-hook` (press `t` on each entry). Timeline installs six handlers: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop`, and `SessionEnd`. Approve all six so Timeline can establish a baseline, record ordered tool changes, and flush pending changes when a task finishes. Review the commands individually instead of choosing **Trust all** when the source contains unrelated hooks.
 
-Codex records approval against the exact hook definition. If Timeline's install path or hook definitions change after an update, open `/hooks` and approve the changed entries again. Do not bypass hook trust; inspect the command before approving it. See the [official Codex hooks documentation](https://learn.chatgpt.com/docs/hooks.md) for details.
+Codex records approval against the exact hook definition. If Timeline's install path or hook definitions change after an update, open `/hooks` in the CLI and approve the changed entries again. Do not bypass hook trust; inspect the command before approving it. The desktop chat composer does not open the hook browser. See the [official Codex hooks documentation](https://learn.chatgpt.com/docs/hooks.md) for details.
 
 After approval, start a fresh Codex task or restart Codex so `SessionStart` can establish the repository baseline.
 
@@ -92,7 +104,7 @@ Open a file inside a Git repository and run:
 :checkhealth timeline
 ```
 
-A healthy setup reports that Git and Neovim are available, automatic recording is enabled, and the repository is synchronized. `:checkhealth timeline` checks the repository side; it cannot tell whether Codex has approved the hooks. Use `/hooks` to verify that Timeline's six entries are trusted and enabled.
+A healthy setup reports that Git and Neovim are available, automatic recording is enabled, and the repository is synchronized. `:checkhealth timeline` checks the repository side; it cannot tell whether Codex has approved the hooks. Use `/hooks` in the Codex CLI to verify that Timeline's six entries are trusted and enabled.
 
 Then open the browser:
 
@@ -310,7 +322,7 @@ Timeline is the renamed successor to Codex Timeline. Existing installations keep
 
 New configuration should use `require("timeline")`, `:Timeline`, and `bin/timeline`.
 
-Run `:TimelineInstallHooks` once after upgrading so `hooks.json` uses the new executable path. The installer removes the old Timeline handler entries before adding the new ones. Then open `/hooks` in Codex and approve any changed Timeline entries again.
+Run `:TimelineInstallHooks` once after upgrading so `hooks.json` uses the new executable path. The installer removes the old Timeline handler entries before adding the new ones. Then open `/hooks` in the Codex CLI and approve any changed Timeline entries again.
 
 ## Uninstall
 
@@ -340,7 +352,7 @@ Confirm the plugin is installed and loaded with `lazy = false`, then restart Neo
 
 ### No future Codex changes appear
 
-In Codex, enter `/hooks`, open the `~/.codex/hooks.json` source, and confirm all six commands ending in `/bin/timeline-hook` are trusted and enabled. Installed hooks do not run until Codex approves them.
+In the Codex CLI, enter `/hooks`, open the `~/.codex/hooks.json` source, and confirm all six commands ending in `/bin/timeline-hook` are trusted and enabled. Installed hooks do not run until Codex approves them. Entering `/hooks` in the desktop chat composer does not open the hook browser.
 
 If the entries are missing, run `:TimelineInstallHooks`, approve them through `/hooks`, and start a fresh Codex task. Then check the repository side with:
 

@@ -177,24 +177,34 @@ so results never leak into another snapshot.
 ==============================================================================
 HOOK APPROVAL                                      *timeline-hook-approval*
 
-Installing Timeline writes hook definitions but does not approve them. In
-Codex's prompt or command input, enter:
+Installing Timeline writes hook definitions but does not approve them. Open a
+terminal and start the Codex CLI:
+>
+    codex
+<
+On macOS, if the desktop app is installed but codex is not on PATH, use:
+>
+    "/Applications/ChatGPT.app/Contents/Resources/codex"
+<
+Choose "Review hooks" at the startup warning, or enter this inside the CLI:
 >
     /hooks
 <
 Open the ~/.codex/hooks.json source. Review and trust every command whose path
-ends in /bin/timeline-hook. Approve all six Timeline handlers: SessionStart,
-UserPromptSubmit, PreToolUse, PostToolUse, Stop, and SessionEnd.
+ends in /bin/timeline-hook by pressing t on each entry. Approve all six Timeline
+handlers: SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop, and
+SessionEnd. Review them individually instead of trusting unrelated hooks.
 
 Codex records trust against the exact hook definition. If the install path or
-hook definitions change after an update, use /hooks to approve the changed
-entries again. Do not bypass hook trust; inspect each command before approval.
-After approval, start a fresh Codex task or restart Codex so SessionStart can
+hook definitions change after an update, use /hooks in the CLI to approve the
+changed entries again. Do not bypass hook trust; inspect each command before
+approval. The desktop chat composer does not open the hook browser. After
+approval, start a fresh Codex task or restart Codex so SessionStart can
 establish the repository baseline.
 
 |:checkhealth| timeline verifies the Neovim and repository side, but it cannot
-inspect Codex hook approvals. Use /hooks to confirm the six Timeline entries
-are trusted and enabled.
+inspect Codex hook approvals. Use /hooks in the CLI to confirm the six Timeline
+entries are trusted and enabled.
 
 Official documentation: https://learn.chatgpt.com/docs/hooks.md
 
