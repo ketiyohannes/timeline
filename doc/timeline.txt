@@ -53,8 +53,8 @@ COMMANDS                                                  *timeline-commands*
 
 :TimelineInstallHooks / :TimelineUninstallHooks
     Safely add or remove Timeline's Codex lifecycle handlers. Unrelated hooks
-    are preserved and hooks.json is backed up before each change. Restart
-    Codex after installing hooks.
+    are preserved and hooks.json is backed up before each change. Installed
+    hooks must also be approved in Codex; see |timeline-hook-approval|.
 
 ]t / [t
     Jump to the next or previous annotated line.
@@ -175,6 +175,30 @@ another file or commit clears code search and resets its scope to "this file"
 so results never leak into another snapshot.
 
 ==============================================================================
+HOOK APPROVAL                                      *timeline-hook-approval*
+
+Installing Timeline writes hook definitions but does not approve them. In
+Codex's prompt or command input, enter:
+>
+    /hooks
+<
+Open the ~/.codex/hooks.json source. Review and trust every command whose path
+ends in /bin/timeline-hook. Approve all six Timeline handlers: SessionStart,
+UserPromptSubmit, PreToolUse, PostToolUse, Stop, and SessionEnd.
+
+Codex records trust against the exact hook definition. If the install path or
+hook definitions change after an update, use /hooks to approve the changed
+entries again. Do not bypass hook trust; inspect each command before approval.
+After approval, start a fresh Codex task or restart Codex so SessionStart can
+establish the repository baseline.
+
+|:checkhealth| timeline verifies the Neovim and repository side, but it cannot
+inspect Codex hook approvals. Use /hooks to confirm the six Timeline entries
+are trusted and enabled.
+
+Official documentation: https://learn.chatgpt.com/docs/hooks.md
+
+==============================================================================
 SETUP                                                        *timeline-setup*
 
 >lua
@@ -205,7 +229,9 @@ With lazy.nvim:
     }
 <
 
-After :Lazy sync, run |:TimelineInstallHooks| and restart Codex. Verify with:
+After :Lazy sync, run |:TimelineInstallHooks|, approve its entries as described
+in |timeline-hook-approval|, and start a fresh Codex task. Verify the repository
+side with:
 >
     :checkhealth timeline
 <
