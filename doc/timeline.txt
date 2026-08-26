@@ -64,10 +64,12 @@ CODE PANE HEADER                                      *timeline-code-header*
 
 Code keeps the selected event and file visible in two fixed rows:
 >
-    #012 · refactor authentication
+    Turn 3 · #012 · refactor authentication
     src/auth/session.ts
 <
-The first row is the change number and commit message or recorded Codex label.
+When Codex turn metadata exists, the first row starts with its human-readable
+turn number, followed by the change number and commit message or recorded Codex
+label. Imported Git-only commits omit the turn. Raw Codex UUIDs stay hidden.
 The second is the repository-relative path currently open in Code. Selecting a
 Codebase row or |timeline-file-search| result updates the path immediately.
 
@@ -86,10 +88,12 @@ uses the bottom command line.
 
 Results update after every keystroke. Nonmatching commits disappear, while the
 Changes title displays the remaining count. Matching is case-insensitive and
-literal across change numbers and commit messages. For example:
+literal across visible turn numbers, change numbers, and commit messages. For
+example:
 >
     auth
     #012
+    turn 3
     base
 <
 The current commit remains selected while it matches. Otherwise, the first

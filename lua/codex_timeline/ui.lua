@@ -83,6 +83,13 @@ local function event_marker(event)
   return event.sequence == 0 and "base" or string.format("#%03d", event.sequence)
 end
 
+local function event_context(event)
+  if event.turn_number then
+    return string.format("Turn %d · %s", event.turn_number, event_marker(event))
+  end
+  return event_marker(event)
+end
+
 local function same_event(left, right)
   return left and right and left.hash == right.hash
 end
@@ -186,7 +193,7 @@ local function current_file()
 end
 
 local function source_title(event)
-  return string.format(" %s · %s ", event_marker(event), event.subject)
+  return string.format(" %s · %s ", event_context(event), event.subject)
 end
 
 local function source_winbar(path)
@@ -724,13 +731,13 @@ local function render_commits(preferred_event)
 
   local lines = {}
   for _, event in ipairs(state.visible_events) do
-    lines[#lines + 1] = string.format("%-5s %s", event_marker(event), event.subject)
+    lines[#lines + 1] = string.format("%s %s", event_context(event), event.subject)
   end
   vim.api.nvim_buf_clear_namespace(buffer, namespace, 0, -1)
   vim.api.nvim_buf_clear_namespace(buffer, search_namespace, 0, -1)
   set_lines(buffer, lines)
-  for index, _ in ipairs(state.visible_events) do
-    vim.api.nvim_buf_add_highlight(buffer, namespace, "CodexTimelineChangeNumber", index - 1, 0, 4)
+  for index, event in ipairs(state.visible_events) do
+    vim.api.nvim_buf_add_highlight(buffer, namespace, "CodexTimelineChangeNumber", index - 1, 0, #event_context(event))
   end
   if state.search.query ~= "" then
     render_match_highlights(buffer, search_namespace, #state.visible_events, state.search.index)
@@ -766,7 +773,7 @@ function M.search(query, preferred_event)
   local needle = query:lower()
   local matches, visible = {}, {}
   for row, event in ipairs(state.events) do
-    local searchable = string.format("%s %s", event_marker(event), event.subject):lower()
+    local searchable = string.format("%s %s", event_context(event), event.subject):lower()
     if query == "" or searchable:find(needle, 1, true) then
       visible[#visible + 1] = event
       if query ~= "" then
@@ -913,7 +920,7 @@ local function search_bar_title(role)
     return match_title(string.format("Code · %s · %s", scope, toggle), state.code_search.query,
       #state.code_search.matches)
   end
-  local marker = state.event and event_marker(state.event) or "current"
+  local marker = state.event and event_context(state.event) or "current"
   return string.format(" Search files in %s ", marker)
 end
 
@@ -1102,17 +1109,17 @@ function M.open(opts)
 
   local event_lines = {}
   for _, event in ipairs(events) do
-    event_lines[#event_lines + 1] = string.format("%-5s %s", event_marker(event), event.subject)
+    event_lines[#event_lines + 1] = string.format("%s %s", event_context(event), event.subject)
   end
   set_lines(state.buffers.changes, event_lines)
-  for index, _ in ipairs(events) do
+  for index, event in ipairs(events) do
     vim.api.nvim_buf_add_highlight(
       state.buffers.changes,
       namespace,
       "CodexTimelineChangeNumber",
       index - 1,
       0,
-      4
+      #event_context(event)
     )
   end
   vim.bo[state.buffers.changes].filetype = "codex-timeline"

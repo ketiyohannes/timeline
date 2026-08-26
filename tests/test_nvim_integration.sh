@@ -19,12 +19,16 @@ git -C "$test_root" add deep.txt
 git -C "$test_root" commit -qm baseline
 "$project_root/bin/timeline" start --repo "$test_root" --session nvim >/dev/null
 printf 'alpha\nbeta\n' > "$test_root/example.txt"
-"$project_root/bin/timeline" checkpoint --repo "$test_root" --session nvim --label apply_patch >/dev/null
+"$project_root/bin/timeline" checkpoint --repo "$test_root" --session nvim --label apply_patch \
+  --codex-session session-real --event PreToolUse --tool apply_patch \
+  --turn 01turn-first --tool-use exec-first >/dev/null
 printf 'alpha\ngamma\n' > "$test_root/example.txt"
 printf 'new\n' > "$test_root/added.txt"
 awk 'BEGIN { for (line = 1; line <= 400; line++) print (line == 300 ? "changed line 300" : "line " line) }' > "$test_root/deep.txt"
 rm "$test_root/unchanged.txt"
-"$project_root/bin/timeline" checkpoint --repo "$test_root" --session nvim --label refactor >/dev/null
+"$project_root/bin/timeline" checkpoint --repo "$test_root" --session nvim --label refactor \
+  --codex-session session-real --event PreToolUse --tool apply_patch \
+  --turn 01turn-second --tool-use exec-second >/dev/null
 
 TIMELINE_PROJECT="$project_root" \
 TIMELINE_TEST_REPO="$test_root" \

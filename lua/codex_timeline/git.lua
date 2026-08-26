@@ -83,7 +83,7 @@ end
 function M.events(root, ref)
   local output, err = run({
     "git", "log", "--reverse", "--topo-order", "--date=format:%H:%M:%S",
-    "--format=%H%x09%P%x09%ad%x09%s", ref,
+    "-z", "--format=%H%x1f%P%x1f%ad%x1f%s%x1f%B", ref,
   }, root)
   if not output then
     return nil, err
@@ -91,12 +91,28 @@ function M.events(root, ref)
 
   local events = {}
   local zero_based = nil
-  for line in output:gmatch("[^\n]+") do
-    local hash, parents, time, subject = line:match("^([^\t]+)\t([^\t]*)\t([^\t]+)\t(.*)$")
+  local turns = {}
+  local turn_count = 0
+  for record in output:gmatch("([^%z]+)%z") do
+    local hash, parents, time, subject, body = record:match(
+      "^([^\31]+)\31([^\31]*)\31([^\31]+)\31([^\31]*)\31(.*)$"
+    )
     if hash then
       local synthetic = subject:match("^timeline:") ~= nil or subject:match("^codex%-timeline:") ~= nil
       if zero_based == nil then
         zero_based = synthetic
+      end
+      local turn = body:match("[\r\n]Timeline%-Turn:%s*([^\r\n]+)")
+        or body:match("^Timeline%-Turn:%s*([^\r\n]+)")
+        or body:match("[\r\n]Codex%-Timeline%-Turn:%s*([^\r\n]+)")
+        or body:match("^Codex%-Timeline%-Turn:%s*([^\r\n]+)")
+      turn = turn and vim.trim(turn) or nil
+      if turn == "" or (turn and turn:lower() == "unknown") then
+        turn = nil
+      end
+      if turn and not turns[turn] then
+        turn_count = turn_count + 1
+        turns[turn] = turn_count
       end
       local sequence = zero_based and #events or (#events + 1)
       events[#events + 1] = {
@@ -106,6 +122,8 @@ function M.events(root, ref)
         subject = subject:gsub("^timeline:%s*", ""):gsub("^codex%-timeline:%s*", ""),
         sequence = sequence,
         synthetic = synthetic,
+        turn = turn,
+        turn_number = turn and turns[turn] or nil,
       }
     end
   end

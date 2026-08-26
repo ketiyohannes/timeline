@@ -50,10 +50,11 @@ end
 assert(roles.changes and roles.files and roles.source, "snapshot browser panes were not created")
 
 local change_text = table.concat(vim.api.nvim_buf_get_lines(roles.changes, 0, -1, false), "\n")
-assert(change_text:find("#001%s+apply_patch"), "first change number and message were not shown")
-assert(change_text:find("#002%s+refactor"), "second change number and message were not shown")
+assert(change_text:find("Turn 1%s+·%s+#001%s+apply_patch"), "first Codex turn, change number, and message were not shown")
+assert(change_text:find("Turn 2%s+·%s+#002%s+refactor"), "second Codex turn, change number, and message were not shown")
 assert(not change_text:find("%d%d:%d%d:%d%d"), "timeline leaked timestamp metadata")
 assert(not change_text:find("[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]"), "timeline leaked commit hash metadata")
+assert(not change_text:find("01turn%-"), "timeline leaked raw Codex turn metadata")
 
 -- Commit search accepts both change numbers and message fragments, highlights
 -- every result, and wraps in both directions.
@@ -67,6 +68,10 @@ local function window_title(window)
   end
   return title
 end
+assert(
+  window_title(ui_state.windows.source):find("Turn 2 · #002", 1, true),
+  "source title does not show the selected Codex turn and change number"
+)
 
 local changes_before_search = vim.api.nvim_win_get_config(ui_state.windows.changes)
 ui.toggle_search_bar("commits")
@@ -100,6 +105,13 @@ assert(search_marks[1][4].line_hl_group == "TimelineSearchCurrent", "selected se
 local search_title = window_title(ui_state.windows.changes)
 assert(search_title:find("1 match", 1, true), "changes title does not show the search result count")
 
+ui.search("turn 2")
+assert(#ui_state.search.matches == 1, "turn search should find every change from the requested Codex turn")
+assert(
+  vim.api.nvim_buf_get_lines(roles.changes, 0, -1, false)[1]:find("refactor", 1, true),
+  "turn search returned the wrong change"
+)
+ui.search("")
 ui.search("a")
 assert(#ui_state.search.matches == 3, "message-fragment search did not find every commit")
 assert(vim.api.nvim_win_get_cursor(ui_state.windows.changes)[1] == 3, "search should start at the current matching commit")
