@@ -17,6 +17,12 @@ local opened = vim.wait(5000, function()
 end, 25)
 assert(opened, ":Timeline did not open the imported commit history and synchronization snapshot")
 local events = require("codex_timeline.ui")._state.events
+local commits = require("codex_timeline.ui")._state.commits
+assert(#commits == 4, "existing Git history plus local WIP were not grouped correctly")
+assert(commits[1].subject == "create existing project" and not commits[1].events[1].commit_turn_number,
+  "Git-only commit should remain a plain commit without invented turns")
+assert(commits[4].wip and commits[4].subject == "Uncommitted changes",
+  "uncommitted synchronized state should appear in the WIP group")
 assert(events[1].sequence == 1 and events[1].subject == "create existing project", "root commit was not imported as #1")
 assert(events[2].sequence == 2 and events[2].subject == "add project settings", "second commit was not imported as #2")
 assert(events[3].sequence == 3 and events[3].subject == "extend existing feature", "third commit was not imported as #3")

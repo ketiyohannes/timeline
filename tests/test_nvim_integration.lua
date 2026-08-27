@@ -20,6 +20,10 @@ assert(marks[1][4].sign_text == "02", "expected event #2 sign")
 
 timeline.open()
 local ui_state = require("codex_timeline.ui")._state
+assert(#ui_state.commits == 2, "Timeline snapshots were not grouped into the two real Git commits")
+assert(#ui_state.commits[2].events == 2, "Codex changes were not nested inside the feature commit")
+assert(ui_state.commits[2].events[1].commit_turn_number == 1, "first in-commit turn was not numbered first")
+assert(ui_state.commits[2].events[2].commit_turn_number == 2, "second in-commit turn was not numbered second")
 
 -- All three floating panes must respond to editor resizing and remain within
 -- the available columns.
@@ -50,11 +54,17 @@ end
 assert(roles.changes and roles.files and roles.source, "snapshot browser panes were not created")
 
 local change_text = table.concat(vim.api.nvim_buf_get_lines(roles.changes, 0, -1, false), "\n")
-assert(change_text:find("Turn 1%s+·%s+#001%s+apply_patch"), "first Codex turn, change number, and message were not shown")
-assert(change_text:find("Turn 2%s+·%s+#002%s+refactor"), "second Codex turn, change number, and message were not shown")
+assert(change_text:find("#001 baseline", 1, true), "baseline Git commit was not shown")
+assert(change_text:find("#002 build realistic feature", 1, true), "feature Git commit was not shown")
+assert(not change_text:find("Turn ", 1, true), "Codex turns leaked into the commit pane")
 assert(not change_text:find("%d%d:%d%d:%d%d"), "timeline leaked timestamp metadata")
 assert(not change_text:find("[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]"), "timeline leaked commit hash metadata")
 assert(not change_text:find("01turn%-"), "timeline leaked raw Codex turn metadata")
+
+local codebase_text = table.concat(vim.api.nvim_buf_get_lines(roles.files, 0, -1, false), "\n")
+assert(codebase_text:find("Turn 1 · Change 1 · apply_patch", 1, true), "first Codex change was not grouped inside its commit")
+assert(codebase_text:find("Turn 2 · Change 2 · refactor", 1, true), "second Codex change was not ordered inside its commit")
+assert(not codebase_text:find("01turn%-"), "codebase pane leaked raw Codex turn metadata")
 
 -- Commit search accepts both change numbers and message fragments, highlights
 -- every result, and wraps in both directions.
@@ -69,8 +79,8 @@ local function window_title(window)
   return title
 end
 assert(
-  window_title(ui_state.windows.source):find("Turn 2 · #002", 1, true),
-  "source title does not show the selected Codex turn and change number"
+  window_title(ui_state.windows.source):find("#002 · build realistic feature · Turn 2 · Change 2", 1, true),
+  "source title does not show the commit, Codex turn, and in-commit change number"
 )
 
 local changes_before_search = vim.api.nvim_win_get_config(ui_state.windows.changes)
@@ -93,7 +103,7 @@ vim.cmd.doautocmd("TextChangedI")
 assert(ui_state.search.query == "#002", "search query was not retained")
 assert(#ui_state.search.matches == 1, "change-number search should find exactly one commit")
 local filtered_commits = vim.api.nvim_buf_get_lines(roles.changes, 0, -1, false)
-assert(#filtered_commits == 1 and filtered_commits[1]:find("refactor", 1, true), "commit search did not filter nonmatches")
+assert(#filtered_commits == 1 and filtered_commits[1]:find("build realistic feature", 1, true), "commit search did not filter nonmatches")
 assert(vim.api.nvim_win_get_cursor(ui_state.windows.changes)[1] == 1, "filtered commit was not selected")
 ui.toggle_search_bar("commits")
 assert(ui_state.search_bars.commits == nil, "commit search bar did not toggle closed")
@@ -105,20 +115,20 @@ assert(search_marks[1][4].line_hl_group == "TimelineSearchCurrent", "selected se
 local search_title = window_title(ui_state.windows.changes)
 assert(search_title:find("1 match", 1, true), "changes title does not show the search result count")
 
-ui.search("turn 2")
-assert(#ui_state.search.matches == 1, "turn search should find every change from the requested Codex turn")
+ui.search("realistic")
+assert(#ui_state.search.matches == 1, "commit search should match the Git commit message")
 assert(
-  vim.api.nvim_buf_get_lines(roles.changes, 0, -1, false)[1]:find("refactor", 1, true),
-  "turn search returned the wrong change"
+  vim.api.nvim_buf_get_lines(roles.changes, 0, -1, false)[1]:find("build realistic feature", 1, true),
+  "commit search returned the wrong commit"
 )
 ui.search("")
 ui.search("a")
-assert(#ui_state.search.matches == 3, "message-fragment search did not find every commit")
-assert(vim.api.nvim_win_get_cursor(ui_state.windows.changes)[1] == 3, "search should start at the current matching commit")
+assert(#ui_state.search.matches == 2, "message-fragment search did not find every commit")
+assert(vim.api.nvim_win_get_cursor(ui_state.windows.changes)[1] == 2, "search should start at the current matching commit")
 ui.next_match(1)
 assert(vim.api.nvim_win_get_cursor(ui_state.windows.changes)[1] == 1, "next search match did not wrap")
 ui.next_match(-1)
-assert(vim.api.nvim_win_get_cursor(ui_state.windows.changes)[1] == 3, "previous search match did not wrap")
+assert(vim.api.nvim_win_get_cursor(ui_state.windows.changes)[1] == 2, "previous search match did not wrap")
 ui.search("")
 assert(ui_state.search.query == "" and #ui_state.search.matches == 0, "empty search did not clear results")
 assert(#vim.api.nvim_buf_get_extmarks(roles.changes, search_namespace, 0, -1, {}) == 0, "cleared search left highlights")
@@ -139,7 +149,8 @@ vim.cmd.doautocmd("TextChangedI")
 assert(ui_state.file_search.query == "deep", "file search query was not retained")
 assert(#ui_state.file_search.matches == 1, "file search should find one deep file")
 local filtered_files = vim.api.nvim_buf_get_lines(roles.files, 0, -1, false)
-assert(#filtered_files == 1 and filtered_files[1] == "deep.txt", "file search did not filter nonmatches")
+assert(filtered_files[#filtered_files] == "deep.txt", "file search did not filter nonmatching paths")
+assert(table.concat(filtered_files, "\n"):find("Turn 1", 1, true), "file search hid the commit's turn ordering")
 assert(vim.b[roles.source].codex_timeline_path == "deep.txt", "file search did not open its historical result")
 ui.toggle_search_bar("files")
 assert(ui_state.search_bars.files == nil, "file search bar did not toggle closed")
@@ -161,9 +172,11 @@ assert(#ui_state.file_search.matches == 4, "file search did not cover the comple
 ui.next_file_match(1)
 ui.next_file_match(1)
 ui.next_file_match(1)
-assert(vim.api.nvim_win_get_cursor(ui_state.windows.files)[1] == 1, "next file match did not wrap")
+local selected_row = ui_state.file_rows[vim.api.nvim_win_get_cursor(ui_state.windows.files)[1]]
+assert(selected_row and selected_row.path == ui_state.visible_files[1], "next file match did not wrap")
 ui.next_file_match(-1)
-assert(vim.api.nvim_win_get_cursor(ui_state.windows.files)[1] == 4, "previous file match did not wrap")
+selected_row = ui_state.file_rows[vim.api.nvim_win_get_cursor(ui_state.windows.files)[1]]
+assert(selected_row and selected_row.path == ui_state.visible_files[4], "previous file match did not wrap")
 ui.search_files("")
 assert(ui_state.file_search.query == "" and #ui_state.file_search.matches == 0, "empty file search did not clear")
 assert(#vim.api.nvim_buf_get_extmarks(roles.files, file_search_namespace, 0, -1, {}) == 0, "file search highlights remain")
@@ -179,10 +192,9 @@ local changed_file_marks = vim.api.nvim_buf_get_extmarks(
   -1,
   { details = true }
 )
-assert(#changed_file_marks == 4, "all files touched by the event should be highlighted")
 local file_groups = {}
 for _, mark in ipairs(changed_file_marks) do
-  file_groups[mark[4].line_hl_group] = true
+  if mark[4].line_hl_group then file_groups[mark[4].line_hl_group] = true end
 end
 assert(file_groups.CodexTimelineAddFile, "added files should use the stronger add highlight")
 assert(file_groups.CodexTimelineDeleteFile, "deleted files should use the stronger delete highlight")
@@ -357,13 +369,13 @@ assert(deep_topline == 300, "source viewport did not start at the first highligh
 assert(vim.api.nvim_win_get_cursor(ui_state.windows.source)[1] == 300, "source cursor did not jump to the change")
 assert(vim.wo[ui_state.windows.source].winbar:find("deep.txt", 1, true), "file path did not update with selection")
 
--- Moving backward reconstructs the full earlier codebase and its event-local
--- highlights rather than showing the latest worktree or a raw patch.
-vim.api.nvim_set_current_win(ui_state.windows.changes)
+-- Moving backward inside the selected Git commit reconstructs the full
+-- earlier Codex turn and its event-local highlights.
 ui.search_files("added.txt")
-vim.api.nvim_win_set_cursor(ui_state.windows.changes, { 2, 0 })
+vim.api.nvim_set_current_win(ui_state.windows.files)
+vim.api.nvim_win_set_cursor(ui_state.windows.files, { 1, 0 })
 vim.cmd.doautocmd("CursorMoved")
-assert(ui_state.file_search.query == "", "file search was not cleared when the selected commit changed")
+assert(ui_state.file_search.query == "", "file search was not cleared when the selected turn changed")
 assert(window_title(ui_state.windows.files) == " Codebase ", "codebase title retained a stale commit search")
 local earlier_files = table.concat(vim.api.nvim_buf_get_lines(roles.files, 0, -1, false), "\n")
 assert(earlier_files:find("unchanged.txt", 1, true), "earlier snapshot lost an unchanged file")

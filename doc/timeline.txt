@@ -12,14 +12,16 @@ repository's normal index.
 COMMANDS                                                  *timeline-commands*
 
 :Timeline
-    Open the three-pane snapshot browser. Changes shows ordered messages,
-    Codebase shows every file at the event, and Code shows the complete file
-    with bold + and - highlights. The Code title contains the change number and
-    message, with the opened repository-relative path fixed directly below it.
+    Open the three-pane snapshot browser. Commits shows real Git commits only.
+    Codebase shows ordered Codex turns/changes inside the selected commit and
+    the complete file tree at the selected change. Code shows the complete file
+    with bold + and - highlights. The Code title contains the commit, turn, and
+    in-commit change number, with the path fixed directly below it.
     See |timeline-code-header|.
 
     Press <CR> to move right, 1/2/3 to focus a pane, [c and ]c to traverse
-    events, r for a manual full reopen, and q or <Esc> to close. New recorded
+    commits, [t and ]t to traverse Codex changes inside the commit, r for a
+    manual full reopen, and q or <Esc> to close. New recorded
     snapshots appear automatically while the browser is open. If the newest
     event was selected, Timeline follows the new event; an older selection is
     preserved. Press / from any pane to
@@ -62,14 +64,14 @@ COMMANDS                                                  *timeline-commands*
 ==============================================================================
 CODE PANE HEADER                                      *timeline-code-header*
 
-Code keeps the selected event and file visible in two fixed rows:
+Code keeps the selected commit/change and file visible in two fixed rows:
 >
-    Turn 3 · #012 · refactor authentication
+    #012 · refactor authentication · Turn 3 · Change 2
     src/auth/session.ts
 <
-When Codex turn metadata exists, the first row starts with its human-readable
-turn number, followed by the change number and commit message or recorded Codex
-label. Imported Git-only commits omit the turn. Raw Codex UUIDs stay hidden.
+The first row starts with the real Git commit number and message. When Codex
+metadata exists, it then shows the human-readable turn and that change's order
+inside the commit. Git-only commits omit this suffix. Raw Codex UUIDs stay hidden.
 The second is the repository-relative path currently open in Code. Selecting a
 Codebase row or |timeline-file-search| result updates the path immediately.
 
@@ -87,13 +89,12 @@ The pane makes room for the bar, and both resize with Neovim. The query never
 uses the bottom command line.
 
 Results update after every keystroke. Nonmatching commits disappear, while the
-Changes title displays the remaining count. Matching is case-insensitive and
-literal across visible turn numbers, change numbers, and commit messages. For
+Commits title displays the remaining count. Matching is case-insensitive and
+literal across visible Git commit numbers and commit messages. For
 example:
 >
     auth
     #012
-    turn 3
     base
 <
 The current commit remains selected while it matches. Otherwise, the first
@@ -101,11 +102,11 @@ later match opens, wrapping to the first result when necessary. Press <CR> or
 <Esc> to hide the bar and keep the filter active. Then press n for the next
 result or N for the previous result from any pane. Navigation wraps.
 
-Opening a result reconstructs the complete codebase at that event. Codebase
-contains every file that existed then, and Code displays the selected full file
-with the event-local additions and removals highlighted.
+Opening a result selects its final recorded state. Codebase contains its ordered
+Codex changes, when available, followed by every file that existed then.
+Selecting a change row reconstructs that intermediate state inside the commit.
 
-Delete all search text to restore every commit. When no commit matches, Changes
+Delete all search text to restore every commit. When no commit matches, Commits
 contains no rows, the current snapshot remains open, and its title displays
 "no matches". Commit search does not inspect file contents, paths, timestamps,
 or commit hashes. Use |timeline-file-search| to search snapshot paths.
@@ -114,9 +115,9 @@ or commit hashes. Use |timeline-file-search| to search snapshot paths.
 FILE SEARCH                                          *timeline-file-search*
 
 Press F from any Timeline pane to toggle a dedicated search bar above Codebase.
-Its title includes the active change number, for example:
+Its title includes the active commit and Codex change, for example:
 >
-    Search files in #012: src/api
+    Search files in #012 · Turn 3 · Change 2
 <
 The bar and Codebase pane resize together. Results update after every keystroke,
 and nonmatching paths disappear immediately. Queries are case-insensitive
@@ -135,6 +136,27 @@ highlighted.
 Delete all search text to restore the complete snapshot tree. Changing commits
 also clears the filter so paths from one filesystem snapshot never leak into
 another. File search matches paths only; it does not inspect file contents.
+
+===============================================================================
+COMMIT AND TURN MODEL                              *timeline-commit-turn-model*
+
+The left pane always represents ordinary Git history. Timeline compares each
+recorded snapshot tree with reachable Git commit trees and groups the captured
+snapshots beneath the commit that contains them. Codex turns never appear as
+top-level commits. Recorded work newer than HEAD appears under "WIP Uncommitted
+changes" until a matching Git commit is created.
+
+For a commit with Codex metadata, Codebase starts with rows such as:
+>
+    Turn 1 · Change 1 · apply_patch
+    Turn 2 · Change 2 · refactor
+    -- Codebase at selected change --
+    src/app.ts
+    src/store.ts
+<
+Selecting a change row rebuilds the complete historical codebase at that point.
+For imported or otherwise Git-only commits, Codebase contains only the file tree
+because Git cannot recover the order of edits made inside an existing commit.
 
 ==============================================================================
 CODE SEARCH                                           *timeline-code-search*

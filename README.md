@@ -135,18 +135,21 @@ The old `:CodexTimeline*` commands remain as compatibility aliases, but new conf
 
 The browser contains three panes:
 
-1. **Changes** — the ordered change number and message only.
-2. **Codebase** — every file that existed at the selected event.
-3. **Code** — the complete selected file with event-local changes highlighted.
+1. **Commits** — real Git commits, always ordered by Git history.
+2. **Codebase** — ordered Codex turns/changes inside the selected commit, followed by every file that existed at that point.
+3. **Code** — the complete selected file with the selected Codex change highlighted.
+
+Timeline never promotes an individual Codex tool snapshot to the commit list. It matches the snapshot trees to real Git commits and nests the captured work beneath the commit that contains it. If the latest recorded work has not been committed yet, it is collected under `WIP Uncommitted changes`. A Git-only repository simply shows its commits and file trees without turn rows.
 
 Keys:
 
 | Key | Action |
 |---|---|
-| `j` / `k` | Move through changes or files |
-| `Enter` (panes) | Move from Changes to Codebase, then to Code |
+| `j` / `k` | Move through commits, changes, or files |
+| `Enter` (panes) | Move from Commits to Codebase, then to Code |
 | `1` / `2` / `3` | Focus a pane directly |
-| `[c` / `]c` | Select the previous or next event from any pane |
+| `[c` / `]c` | Select the previous or next Git commit |
+| `[t` / `]t` | Select the previous or next recorded Codex change inside that commit |
 | `/` | Toggle real-time commit search |
 | `n` / `N` | Jump to the next or previous search match |
 | `F` | Toggle real-time file search for the selected commit |
@@ -161,9 +164,9 @@ Keys:
 
 Changed files are selected automatically. Added files are green, deleted files are red, and modified files are amber. Deleted files remain visible at their deletion event so their complete previous content can be inspected.
 
-While the browser is open, it watches the selected Timeline ref for new snapshots. A completed Codex tool call appears automatically—there is no need to close and run `:Timeline` again. If you were viewing the newest event, the browser follows the new one and opens its first changed file. If you were inspecting an older event, your selection stays in place. The `r` mapping remains available as a manual full reopen.
+While the browser is open, it watches the selected Timeline ref and Git `HEAD`. A completed Codex tool call appears automatically under WIP, and a new Git commit automatically regroups those changes beneath the commit—there is no need to reopen `:Timeline`. If you were viewing the newest change, the browser follows it; an older selection stays in place. The `r` mapping remains available as a manual full reopen.
 
-The three panes resize and recenter automatically whenever the Neovim window changes size. When recorded Codex metadata is present, Changes groups related edits with human-readable labels such as `Turn 1` and `Turn 2`; imported Git-only commits keep their ordinary change labels. Raw task, turn, and tool-use UUIDs stay hidden. The Code pane shows the turn (when available), change number, and commit message in its title, with the opened repository-relative file path fixed directly beneath it. The path stays visible while the file scrolls and updates whenever another file is selected.
+The three panes resize and recenter automatically whenever the Neovim window changes size. Commits never contains Codex turns. When recorded Codex metadata is present, Codebase adds human-readable rows such as `Turn 1 · Change 1` and `Turn 2 · Change 2` above the complete tree for the selected change. Raw task, turn, and tool-use UUIDs stay hidden. The Code pane shows the Git commit, turn, and in-commit change number in its title, with the opened repository-relative file path fixed directly beneath it.
 
 When you select a changed file, the Code pane keeps the complete file loaded but scrolls so its first highlighted line is at the top of the viewport. A change beginning at line 300 therefore opens with line 300 visible first.
 
@@ -172,13 +175,13 @@ When you select a changed file, the Code pane keeps the complete file loaded but
 The Code pane keeps the event and file identity visible as two separate fixed rows:
 
 ```text
-╭──────── Turn 3 · #012 · refactor authentication ──────────╮
+╭── #012 · refactor authentication · Turn 3 · Change 2 ─────╮
 │                     src/auth/session.ts                     │
 │  1  export function createSession() {                       │
 │  2    // complete historical source                         │
 ```
 
-- The border title is the Codex turn number when available, followed by the selected change number and its commit message or recorded Codex label.
+- The border title starts with the real Git commit and message, followed by the selected Codex turn and its order inside that commit when available.
 - The row beneath it is the repository-relative path of the file currently open in Code.
 - Selecting a different Codebase row or file-search result updates the path immediately.
 - Scrolling the source keeps both rows fixed, including when Timeline starts at a deep highlighted line.
@@ -189,24 +192,23 @@ The path is display-only: it is not inserted into the historical buffer, does no
 
 Press `/` from any pane to open a dedicated `Search commits` bar above Changes. The pane makes room for the bar, and both stay aligned as Neovim resizes. Nothing is entered through Neovim's bottom command line.
 
-Filtering happens after every keystroke. Nonmatching commits disappear immediately, while the Changes title reports the remaining result count. Search is case-insensitive and performs a plain-text match against each visible turn number, change number, and commit message.
+Filtering happens after every keystroke. Nonmatching commits disappear immediately, while the Commits title reports the remaining result count. Search is case-insensitive and matches the visible Git commit number and commit message.
 
 Examples:
 
 - `auth` finds messages such as `add authentication` and `fix AUTH redirect`.
-- `#012` jumps directly to change 12.
-- `turn 3` finds every recorded change made during the third Codex turn.
-- `base` finds the imported baseline event.
+- `#012` jumps directly to Git commit 12.
+- `base` finds a Git commit whose message contains `base`.
 
 The selected commit is retained while it still matches. Otherwise, the first later match is opened, wrapping to the first result when needed. Press `Enter` or `Esc` to hide the bar while keeping its filter active. Then use `n` or `N` from any pane to move forward or backward through the filtered results; navigation wraps at either end. Pressing `/` again also toggles the bar.
 
-Selecting a search result reconstructs that event across the entire browser. Codebase shows every file that existed then, while Code opens the first changed file with its highlighted change at the top. The full file remains available for normal scrolling.
+Selecting a search result opens its final recorded state. Codebase shows its ordered Codex changes, if any, and the complete file tree. Selecting a turn/change row reconstructs that intermediate state inside the commit.
 
-Delete all text in the bar to restore every commit. A query with no results removes every row from Changes, leaves the current snapshot open in the other panes, and shows `no matches` in the title. Commit search covers visible turn numbers, change numbers, and messages only; use `F` to search paths in the selected snapshot. It does not search raw Codex UUIDs, file contents, timestamps, or commit hashes.
+Delete all text in the bar to restore every commit. A query with no results removes every row from Commits, leaves the current snapshot open in the other panes, and shows `no matches` in the title. Use `F` to search paths in the selected snapshot; raw Codex UUIDs, contents, timestamps, and hashes are not searched.
 
 ### Searching files in a commit
 
-Press `F` from any pane to open a dedicated file-search bar above Codebase. Its title includes the active change number, such as `Search files in #012`, so it is always clear which historical snapshot is being searched. The bar and Codebase pane resize together with the rest of the browser.
+Press `F` from any pane to open a dedicated file-search bar above Codebase. Its title identifies the commit and, when present, its active turn/change, such as `Search files in #012 · Turn 3 · Change 2`. The bar and Codebase pane resize together with the rest of the browser.
 
 Filtering happens after every keystroke. Nonmatching paths are removed from Codebase immediately instead of merely being highlighted.
 
@@ -246,7 +248,7 @@ Press `Esc` to hide the bar without leaving Timeline. You can then press `o` fro
 
 When Timeline first sees an existing repository, it imports every commit reachable from the current `HEAD` in deterministic parent-before-child order. The root commit is `#001`, and all of its lines are treated as additions.
 
-If modified or untracked files exist at synchronization time, their complete state becomes the next `existing project baseline` event. Git cannot recover edit order inside an old commit; imported history therefore has commit-level ordering. Future Codex activity has tool-call-level ordering.
+If modified or untracked files exist at synchronization time, their complete state appears as `WIP Uncommitted changes`. Git cannot recover edit order inside an old commit, so imported history has commit-level ordering only. Future Codex activity gains turn/tool ordering inside the eventual Git commit. Once a recorded tree matches a new Git commit, Timeline automatically nests those captured changes beneath it.
 
 Codex lifecycle hooks capture a pending label before each tool call and create a snapshot after successful completion. Different Codex tasks append to the same continuous project timeline rather than resetting the numbering.
 

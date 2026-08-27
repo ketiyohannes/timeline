@@ -29,6 +29,8 @@ rm "$test_root/unchanged.txt"
 "$project_root/bin/timeline" checkpoint --repo "$test_root" --session nvim --label refactor \
   --codex-session session-real --event PreToolUse --tool apply_patch \
   --turn 01turn-second --tool-use exec-second >/dev/null
+git -C "$test_root" add -A
+git -C "$test_root" commit -qm "build realistic feature"
 
 TIMELINE_PROJECT="$project_root" \
 TIMELINE_TEST_REPO="$test_root" \

@@ -18,11 +18,16 @@ local state = {
   buffers = {},
   events = {},
   visible_events = {},
+  commits = {},
+  visible_commits = {},
+  commit = nil,
+  file_rows = {},
   files = {},
   visible_files = {},
   changes = {},
   root = nil,
   ref = nil,
+  head_hash = nil,
   event = nil,
   augroup = nil,
   search = { query = "", matches = {}, index = 0 },
@@ -56,6 +61,10 @@ local function close()
   state.buffers = {}
   state.search_bars = {}
   state.visible_events = {}
+  state.visible_commits = {}
+  state.commits = {}
+  state.commit = nil
+  state.file_rows = {}
   state.visible_files = {}
   state.search = { query = "", matches = {}, index = 0 }
   state.file_search = { query = "", matches = {}, index = 0 }
@@ -63,6 +72,7 @@ local function close()
   state.snapshot_cache = {}
   state.navigating_code_search = false
   state.event = nil
+  state.head_hash = nil
   if state.augroup then
     pcall(vim.api.nvim_del_augroup_by_id, state.augroup)
     state.augroup = nil
@@ -83,11 +93,12 @@ local function event_marker(event)
   return event.sequence == 0 and "base" or string.format("#%03d", event.sequence)
 end
 
-local function event_context(event)
-  if event.turn_number then
-    return string.format("Turn %d · %s", event.turn_number, event_marker(event))
-  end
-  return event_marker(event)
+local function commit_marker(commit)
+  return commit.wip and "WIP" or string.format("#%03d", commit.sequence)
+end
+
+local function same_commit(left, right)
+  return left and right and left.hash == right.hash
 end
 
 local function same_event(left, right)
@@ -179,21 +190,33 @@ local function set_lines(buffer, lines)
 end
 
 local function current_event()
-  if not valid_window(state.windows.changes) then
-    return nil
-  end
-  return state.visible_events[vim.api.nvim_win_get_cursor(state.windows.changes)[1]]
+  return state.event
+end
+
+local function current_commit()
+  if not valid_window(state.windows.changes) then return nil end
+  return state.visible_commits[vim.api.nvim_win_get_cursor(state.windows.changes)[1]]
 end
 
 local function current_file()
   if not valid_window(state.windows.files) then
     return nil
   end
-  return state.visible_files[vim.api.nvim_win_get_cursor(state.windows.files)[1]]
+  local row = state.file_rows[vim.api.nvim_win_get_cursor(state.windows.files)[1]]
+  if row and row.kind == "file" then return row.path end
+  for _, item in ipairs(state.file_rows) do
+    if item.kind == "file" then return item.path end
+  end
+  return nil
 end
 
 local function source_title(event)
-  return string.format(" %s · %s ", event_context(event), event.subject)
+  local commit = state.commit
+  local commit_text = commit and string.format("%s · %s", commit_marker(commit), commit.subject) or "Timeline"
+  if event.commit_turn_number then
+    return string.format(" %s · Turn %d · Change %d ", commit_text, event.commit_turn_number, event.commit_sequence)
+  end
+  return string.format(" %s ", commit_text)
 end
 
 local function source_winbar(path)
@@ -560,28 +583,56 @@ local function render_files(preferred_path)
   end
 
   local selected = 1
-  for index, path in ipairs(state.visible_files) do
-    if path == preferred_path then
+  for index, row in ipairs(state.file_rows) do
+    if row.kind == "file" and row.path == preferred_path then
       selected = index
       break
     end
   end
-  state.file_search.index = state.file_search.query == "" and 0 or selected
+  state.file_search.index = 0
+  if state.file_search.query ~= "" then
+    for index, path in ipairs(state.visible_files) do
+      if path == preferred_path then state.file_search.index = index break end
+    end
+    if state.file_search.index == 0 and #state.visible_files > 0 then state.file_search.index = 1 end
+  end
 
   vim.api.nvim_buf_clear_namespace(buffer, namespace, 0, -1)
   vim.api.nvim_buf_clear_namespace(buffer, file_search_namespace, 0, -1)
-  set_lines(buffer, state.visible_files)
-  for index, path in ipairs(state.visible_files) do
-    local group = file_highlight(state.changes[path])
+  local lines = {}
+  for _, row in ipairs(state.file_rows) do
+    if row.kind == "event" then
+      local turn = row.event.commit_turn_number and string.format("Turn %d", row.event.commit_turn_number) or "Recorded change"
+      lines[#lines + 1] = string.format("%s · Change %d · %s", turn, row.event.commit_sequence, row.event.subject)
+    elseif row.kind == "separator" then
+      lines[#lines + 1] = "── Codebase at selected change ──"
+    else
+      lines[#lines + 1] = row.path
+    end
+  end
+  set_lines(buffer, lines)
+  for index, row in ipairs(state.file_rows) do
+    local group = row.kind == "file" and file_highlight(state.changes[row.path]) or nil
     if group then
       vim.api.nvim_buf_set_extmark(buffer, namespace, index - 1, 0, {
         line_hl_group = group,
         priority = 50,
       })
+    elseif row.kind == "event" then
+      vim.api.nvim_buf_add_highlight(buffer, namespace, "CodexTimelineChangeNumber", index - 1, 0, -1)
     end
   end
   if state.file_search.query ~= "" then
-    render_match_highlights(buffer, file_search_namespace, #state.visible_files, state.file_search.index)
+    local match_index = 0
+    for row, item in ipairs(state.file_rows) do
+      if item.kind == "file" then
+        match_index = match_index + 1
+        vim.api.nvim_buf_set_extmark(buffer, file_search_namespace, row - 1, 0, {
+          line_hl_group = match_index == state.file_search.index and "TimelineSearchCurrent" or "TimelineSearchMatch",
+          priority = match_index == state.file_search.index and 80 or 60,
+        })
+      end
+    end
   end
 
   if valid_window(state.windows.files) then
@@ -591,7 +642,7 @@ local function render_files(preferred_path)
     })
   end
 
-  if #state.visible_files == 0 or not valid_window(state.windows.files) then
+  if #state.file_rows == 0 or not valid_window(state.windows.files) then
     return
   end
   vim.api.nvim_win_set_cursor(state.windows.files, { selected, 0 })
@@ -612,6 +663,20 @@ apply_file_filter = function(query, preferred_path)
   end
   state.file_search = { query = query, matches = matches, index = 0 }
   state.visible_files = visible
+
+  local rows = {}
+  local has_codex_events = false
+  for _, event in ipairs((state.commit and state.commit.events) or {}) do
+    if event.commit_turn_number then has_codex_events = true break end
+  end
+  if has_codex_events then
+    for _, event in ipairs(state.commit.events) do
+      if event.commit_turn_number then rows[#rows + 1] = { kind = "event", event = event } end
+    end
+    rows[#rows + 1] = { kind = "separator" }
+  end
+  for _, path in ipairs(visible) do rows[#rows + 1] = { kind = "file", path = path } end
+  state.file_rows = rows
 
   if preferred_path then
     local previous_path = preferred_path
@@ -649,11 +714,15 @@ function M.next_file_match(direction)
   if state.file_search.query == "" or count == 0 or not valid_window(state.windows.files) then
     return
   end
-  local row = vim.api.nvim_win_get_cursor(state.windows.files)[1]
-  row = ((row - 1 + (direction or 1)) % count) + 1
-  state.file_search.index = row
+  local current = current_file()
+  local index = 1
+  for candidate, path in ipairs(state.visible_files) do if path == current then index = candidate break end end
+  index = ((index - 1 + (direction or 1)) % count) + 1
+  local target = state.visible_files[index]
+  local row = 1
+  for candidate, item in ipairs(state.file_rows) do if item.kind == "file" and item.path == target then row = candidate break end end
+  state.file_search.index = index
   vim.api.nvim_win_set_cursor(state.windows.files, { row, 0 })
-  render_match_highlights(state.buffers.files, file_search_namespace, count, row)
   render_source()
 end
 
@@ -661,20 +730,25 @@ local function sync_file_search_to_cursor()
   if state.file_search.query == "" or not valid_window(state.windows.files) then
     return
   end
-  state.file_search.index = vim.api.nvim_win_get_cursor(state.windows.files)[1]
-  render_match_highlights(
-    state.buffers.files,
-    file_search_namespace,
-    #state.visible_files,
-    state.file_search.index
-  )
+  local current = current_file()
+  for index, path in ipairs(state.visible_files) do
+    if path == current then state.file_search.index = index break end
+  end
 end
 
 local function render_event()
-  local event = current_event()
-  if not event then
+  local commit = current_commit()
+  if not commit or #commit.events == 0 then
     return
   end
+  local commit_changed = not same_commit(state.commit, commit)
+  state.commit = commit
+  local event = state.event
+  local belongs = false
+  for _, candidate in ipairs(commit.events) do
+    if same_event(candidate, event) then belongs = true break end
+  end
+  if commit_changed or not belongs then event = commit.events[#commit.events] end
   local previous_file = current_file()
   local previous_file_query = state.file_search.query
   local event_changed = not same_event(state.event, event)
@@ -715,14 +789,40 @@ local function render_event()
   apply_file_filter(event_changed and "" or previous_file_query, selected)
 end
 
-local function render_commits(preferred_event)
+local function select_middle_row()
+  if not valid_window(state.windows.files) then return end
+  local row = state.file_rows[vim.api.nvim_win_get_cursor(state.windows.files)[1]]
+  if not row then return end
+  if row.kind == "event" and not same_event(state.event, row.event) then
+    state.event = row.event
+    state.file_search = { query = "", matches = {}, index = 0 }
+    state.code_search = empty_code_search()
+    state.snapshot_cache = {}
+    local files, tree_err = git.tree(state.root, row.event)
+    local changes, changes_err = git.changes(state.root, row.event)
+    if not files or not changes then
+      vim.notify("Timeline: " .. (tree_err or changes_err or "unable to read snapshot"), vim.log.levels.ERROR)
+      return
+    end
+    for path, change in pairs(changes) do if change.kind == "D" then files[#files + 1] = path end end
+    table.sort(files)
+    state.files, state.changes = files, changes
+    local selected_path
+    for _, path in ipairs(files) do if changes[path] then selected_path = path break end end
+    apply_file_filter("", selected_path)
+  elseif row.kind == "file" then
+    render_source()
+  end
+end
+
+local function render_commits(preferred_commit)
   local buffer = state.buffers.changes
   if not buffer or not vim.api.nvim_buf_is_valid(buffer) then
     return
   end
   local selected = 1
-  for index, event in ipairs(state.visible_events) do
-    if same_event(event, preferred_event) then
+  for index, commit in ipairs(state.visible_commits) do
+    if same_commit(commit, preferred_commit) then
       selected = index
       break
     end
@@ -730,41 +830,41 @@ local function render_commits(preferred_event)
   state.search.index = state.search.query == "" and 0 or selected
 
   local lines = {}
-  for _, event in ipairs(state.visible_events) do
-    lines[#lines + 1] = string.format("%s %s", event_context(event), event.subject)
+  for _, commit in ipairs(state.visible_commits) do
+    lines[#lines + 1] = string.format("%s %s", commit_marker(commit), commit.subject)
   end
   vim.api.nvim_buf_clear_namespace(buffer, namespace, 0, -1)
   vim.api.nvim_buf_clear_namespace(buffer, search_namespace, 0, -1)
   set_lines(buffer, lines)
-  for index, event in ipairs(state.visible_events) do
-    vim.api.nvim_buf_add_highlight(buffer, namespace, "CodexTimelineChangeNumber", index - 1, 0, #event_context(event))
+  for index, commit in ipairs(state.visible_commits) do
+    vim.api.nvim_buf_add_highlight(buffer, namespace, "CodexTimelineChangeNumber", index - 1, 0, #commit_marker(commit))
   end
   if state.search.query ~= "" then
-    render_match_highlights(buffer, search_namespace, #state.visible_events, state.search.index)
+    render_match_highlights(buffer, search_namespace, #state.visible_commits, state.search.index)
   end
   if valid_window(state.windows.changes) then
     vim.api.nvim_win_set_config(state.windows.changes, {
-      title = match_title("Changes", state.search.query, #state.visible_events),
+      title = match_title("Commits", state.search.query, #state.visible_commits),
       title_pos = "center",
     })
   end
-  if #state.visible_events == 0 or not valid_window(state.windows.changes) then
+  if #state.visible_commits == 0 or not valid_window(state.windows.changes) then
     return
   end
   vim.api.nvim_win_set_cursor(state.windows.changes, { selected, 0 })
   render_event()
 end
 
-function M.search(query, preferred_event)
+function M.search(query, preferred_commit)
   if query == nil then
     M.toggle_search_bar("commits")
     return
   end
   query = vim.trim(query)
-  local previous_event = preferred_event or state.event or current_event()
+  local previous_commit = preferred_commit or state.commit or current_commit()
   local previous_row = 1
-  for row, event in ipairs(state.events) do
-    if same_event(event, previous_event) then
+  for row, commit in ipairs(state.commits) do
+    if same_commit(commit, previous_commit) then
       previous_row = row
       break
     end
@@ -772,23 +872,23 @@ function M.search(query, preferred_event)
 
   local needle = query:lower()
   local matches, visible = {}, {}
-  for row, event in ipairs(state.events) do
-    local searchable = string.format("%s %s", event_context(event), event.subject):lower()
+  for row, commit in ipairs(state.commits) do
+    local searchable = string.format("%s %s", commit_marker(commit), commit.subject):lower()
     if query == "" or searchable:find(needle, 1, true) then
-      visible[#visible + 1] = event
+      visible[#visible + 1] = commit
       if query ~= "" then
         matches[#matches + 1] = row
       end
     end
   end
   state.search = { query = query, matches = matches, index = 0 }
-  state.visible_events = visible
+  state.visible_commits = visible
 
-  local preferred = previous_event
+  local preferred = previous_commit
   local found = false
-  for _, event in ipairs(visible) do
-    if same_event(event, preferred) then
-      preferred = event
+  for _, commit in ipairs(visible) do
+    if same_commit(commit, preferred) then
+      preferred = commit
       found = true
       break
     end
@@ -812,7 +912,8 @@ function M.refresh()
   end
   local previous_tip = state.events[#state.events]
   local tip_hash = git.ref_hash(state.root, state.ref)
-  if not tip_hash or (previous_tip and previous_tip.hash == tip_hash) then
+  local head_hash = git.ref_hash(state.root, "HEAD")
+  if not tip_hash or (previous_tip and previous_tip.hash == tip_hash and state.head_hash == head_hash) then
     return false
   end
 
@@ -826,8 +927,16 @@ function M.refresh()
 
   local selected = state.event or current_event()
   local followed_latest = same_event(selected, previous_tip)
-  local preferred = followed_latest and events[#events] or selected
   state.events = events
+  state.head_hash = head_hash
+  local commits, group_err = git.commits(state.root, events)
+  if not commits then
+    vim.notify("Timeline: " .. (group_err or "unable to group commits"), vim.log.levels.ERROR)
+    return false
+  end
+  local preferred = state.commit
+  state.commits = commits
+  if followed_latest then preferred = commits[#commits] end
   M.search(state.search.query, preferred)
   return true
 end
@@ -851,7 +960,7 @@ local function start_live_refresh(interval)
 end
 
 function M.next_match(direction)
-  local count = #state.visible_events
+  local count = #state.visible_commits
   if state.search.query == "" or count == 0 or not valid_window(state.windows.changes) then
     return
   end
@@ -871,7 +980,7 @@ local function sync_search_to_cursor()
   render_match_highlights(
     state.buffers.changes,
     search_namespace,
-    #state.visible_events,
+    #state.visible_commits,
     state.search.index
   )
 end
@@ -887,9 +996,31 @@ local function move_event(direction)
     return
   end
   local row = vim.api.nvim_win_get_cursor(state.windows.changes)[1]
-  row = math.max(1, math.min(#state.visible_events, row + direction))
+  row = math.max(1, math.min(#state.visible_commits, row + direction))
   vim.api.nvim_win_set_cursor(state.windows.changes, { row, 0 })
   render_event()
+end
+
+
+local function move_recorded_change(direction)
+  local events = {}
+  for _, event in ipairs((state.commit and state.commit.events) or {}) do
+    if event.commit_turn_number then events[#events + 1] = event end
+  end
+  if #events < 2 then return end
+  local index = #events
+  for candidate, event in ipairs(events) do if same_event(event, state.event) then index = candidate break end end
+  index = math.max(1, math.min(#events, index + direction))
+  state.event = events[index]
+  state.snapshot_cache = {}
+  local files = git.tree(state.root, state.event) or {}
+  local changes = git.changes(state.root, state.event) or {}
+  for path, change in pairs(changes) do if change.kind == "D" then files[#files + 1] = path end end
+  table.sort(files)
+  state.files, state.changes = files, changes
+  local selected_path
+  for _, path in ipairs(files) do if changes[path] then selected_path = path break end end
+  apply_file_filter("", selected_path)
 end
 
 local function map_all(lhs, callback, description)
@@ -920,7 +1051,11 @@ local function search_bar_title(role)
     return match_title(string.format("Code · %s · %s", scope, toggle), state.code_search.query,
       #state.code_search.matches)
   end
-  local marker = state.event and event_context(state.event) or "current"
+  local marker = state.commit and commit_marker(state.commit) or "current"
+  if state.event and state.event.commit_turn_number then
+    marker = string.format("%s · Turn %d · Change %d", marker,
+      state.event.commit_turn_number, state.event.commit_sequence)
+  end
   return string.format(" Search files in %s ", marker)
 end
 
@@ -1076,9 +1211,15 @@ function M.open(opts)
     vim.notify("Timeline: " .. (err or "unable to load events"), vim.log.levels.ERROR)
     return
   end
+  local commits, commit_err = git.commits(root, events)
+  if not commits then
+    vim.notify("Timeline: " .. (commit_err or "unable to group commits"), vim.log.levels.ERROR)
+    return
+  end
 
   state.root, state.ref, state.events = root, ref, events
-  state.visible_events = events
+  state.head_hash = git.ref_hash(root, "HEAD")
+  state.commits, state.visible_commits = commits, commits
   state.files, state.visible_files = {}, {}
   state.search = { query = "", matches = {}, index = 0 }
   state.file_search = { query = "", matches = {}, index = 0 }
@@ -1094,7 +1235,7 @@ function M.open(opts)
   state.windows.changes = vim.api.nvim_open_win(state.buffers.changes, true, {
     relative = "editor", row = size.row, col = size.col,
     width = size.changes_width, height = size.height,
-    style = "minimal", border = "rounded", title = " Changes ", title_pos = "center",
+    style = "minimal", border = "rounded", title = " Commits ", title_pos = "center",
   })
   state.windows.files = vim.api.nvim_open_win(state.buffers.files, false, {
     relative = "editor", row = size.row, col = size.col + size.changes_width + 2,
@@ -1108,18 +1249,18 @@ function M.open(opts)
   })
 
   local event_lines = {}
-  for _, event in ipairs(events) do
-    event_lines[#event_lines + 1] = string.format("%s %s", event_context(event), event.subject)
+  for _, commit in ipairs(commits) do
+    event_lines[#event_lines + 1] = string.format("%s %s", commit_marker(commit), commit.subject)
   end
   set_lines(state.buffers.changes, event_lines)
-  for index, event in ipairs(events) do
+  for index, commit in ipairs(commits) do
     vim.api.nvim_buf_add_highlight(
       state.buffers.changes,
       namespace,
       "CodexTimelineChangeNumber",
       index - 1,
       0,
-      #event_context(event)
+      #commit_marker(commit)
     )
   end
   vim.bo[state.buffers.changes].filetype = "codex-timeline"
@@ -1158,7 +1299,7 @@ function M.open(opts)
   vim.api.nvim_create_autocmd("CursorMoved", {
     group = state.augroup, buffer = state.buffers.files, callback = function()
       sync_file_search_to_cursor()
-      render_source()
+      select_middle_row()
     end,
   })
   vim.api.nvim_create_autocmd("VimResized", {
@@ -1171,8 +1312,10 @@ function M.open(opts)
 
   map_all("q", close, "Close Timeline")
   map_all("<Esc>", close, "Close Timeline")
-  map_all("[c", function() move_event(-1) end, "Previous recorded change")
-  map_all("]c", function() move_event(1) end, "Next recorded change")
+  map_all("[c", function() move_event(-1) end, "Previous commit")
+  map_all("]c", function() move_event(1) end, "Next commit")
+  map_all("[t", function() move_recorded_change(-1) end, "Previous Codex change in commit")
+  map_all("]t", function() move_recorded_change(1) end, "Next Codex change in commit")
   map_all("/", function() M.search() end, "Search commits")
   map_all("n", function() M.next_match(1) end, "Next commit search match")
   map_all("N", function() M.next_match(-1) end, "Previous commit search match")
@@ -1193,8 +1336,8 @@ function M.open(opts)
     vim.schedule(function() M.open(opts) end)
   end, { buffer = state.buffers.changes, silent = true })
 
-  if #events > 1 then
-    vim.api.nvim_win_set_cursor(state.windows.changes, { #events, 0 })
+  if #commits > 1 then
+    vim.api.nvim_win_set_cursor(state.windows.changes, { #commits, 0 })
   end
   render_event()
   if opts.live_refresh ~= false then

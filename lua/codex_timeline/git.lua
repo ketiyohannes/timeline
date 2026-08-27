@@ -83,7 +83,7 @@ end
 function M.events(root, ref)
   local output, err = run({
     "git", "log", "--reverse", "--topo-order", "--date=format:%H:%M:%S",
-    "-z", "--format=%H%x1f%P%x1f%ad%x1f%s%x1f%B", ref,
+    "-z", "--format=%H%x1f%P%x1f%T%x1f%ad%x1f%s%x1f%B", ref,
   }, root)
   if not output then
     return nil, err
@@ -94,8 +94,8 @@ function M.events(root, ref)
   local turns = {}
   local turn_count = 0
   for record in output:gmatch("([^%z]+)%z") do
-    local hash, parents, time, subject, body = record:match(
-      "^([^\31]+)\31([^\31]*)\31([^\31]+)\31([^\31]*)\31(.*)$"
+    local hash, parents, tree, time, subject, body = record:match(
+      "^([^\31]+)\31([^\31]*)\31([^\31]+)\31([^\31]+)\31([^\31]*)\31(.*)$"
     )
     if hash then
       local synthetic = subject:match("^timeline:") ~= nil or subject:match("^codex%-timeline:") ~= nil
@@ -117,6 +117,7 @@ function M.events(root, ref)
       local sequence = zero_based and #events or (#events + 1)
       events[#events + 1] = {
         hash = hash,
+        tree = tree,
         parent = parents:match("^[^ ]+") or "",
         time = time,
         subject = subject:gsub("^timeline:%s*", ""):gsub("^codex%-timeline:%s*", ""),
@@ -128,6 +129,106 @@ function M.events(root, ref)
     end
   end
   return events
+end
+
+-- Fold Timeline's tool-level snapshots into the ordinary Git commits whose
+-- trees they produced. A run of snapshots ends at the first reachable commit
+-- with the same tree. Anything newer than HEAD remains a WIP group until the
+-- user creates the commit.
+function M.commits(root, events)
+  local output, err = run({
+    "git", "log", "--reverse", "--topo-order", "-z",
+    "--date=format:%H:%M:%S", "--format=%H%x1f%P%x1f%T%x1f%ad%x1f%s", "HEAD",
+  }, root)
+  if not output then
+    return nil, err
+  end
+
+  local ordinary = {}
+  for record in output:gmatch("([^%z]+)%z") do
+    local hash, parents, tree, time, subject = record:match(
+      "^([^\31]+)\31([^\31]*)\31([^\31]+)\31([^\31]+)\31(.*)$"
+    )
+    if hash then
+      ordinary[#ordinary + 1] = {
+        hash = hash,
+        parent = parents:match("^[^ ]+") or "",
+        tree = tree,
+        time = time,
+        subject = subject,
+      }
+    end
+  end
+
+  local function number_codex_changes(grouped)
+    local commit_turns, turn_count, change_count = {}, 0, 0
+    for _, event in ipairs(grouped) do
+      if event.turn then
+        change_count = change_count + 1
+        event.commit_sequence = change_count
+        if not commit_turns[event.turn] then
+          turn_count = turn_count + 1
+          commit_turns[event.turn] = turn_count
+        end
+        event.commit_turn_number = commit_turns[event.turn]
+      end
+    end
+  end
+
+  local groups, event_index = {}, 1
+  for _, commit in ipairs(ordinary) do
+    local boundary
+    for index = event_index, #events do
+      if events[index].tree == commit.tree then
+        boundary = index
+        break
+      end
+    end
+    local grouped = {}
+    if boundary then
+      for index = event_index, boundary do
+        grouped[#grouped + 1] = events[index]
+      end
+      event_index = boundary + 1
+    else
+      -- A Git-only commit is still a top-level Timeline entry. Its own commit
+      -- object is sufficient to reconstruct the complete codebase and diff.
+      grouped[1] = {
+        hash = commit.hash,
+        parent = commit.parent,
+        tree = commit.tree,
+        time = commit.time,
+        subject = commit.subject,
+        sequence = #groups + 1,
+        synthetic = false,
+      }
+    end
+    number_codex_changes(grouped)
+    groups[#groups + 1] = {
+      hash = commit.hash,
+      tree = commit.tree,
+      subject = commit.subject,
+      events = grouped,
+      sequence = #groups + 1,
+    }
+  end
+
+  if event_index <= #events then
+    local grouped = {}
+    for index = event_index, #events do
+      grouped[#grouped + 1] = events[index]
+    end
+    groups[#groups + 1] = {
+      hash = "wip",
+      tree = grouped[#grouped].tree,
+      subject = "Uncommitted changes",
+      events = grouped,
+      sequence = #groups + 1,
+      wip = true,
+    }
+    number_codex_changes(grouped)
+  end
+  return groups
 end
 
 function M.diff(root, event)
