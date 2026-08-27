@@ -62,8 +62,9 @@ assert(not change_text:find("[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-
 assert(not change_text:find("01turn%-"), "timeline leaked raw Codex turn metadata")
 
 local codebase_text = table.concat(vim.api.nvim_buf_get_lines(roles.files, 0, -1, false), "\n")
-assert(codebase_text:find("Turn 1 · Change 1 · apply_patch", 1, true), "first Codex change was not grouped inside its commit")
-assert(codebase_text:find("Turn 2 · Change 2 · refactor", 1, true), "second Codex change was not ordered inside its commit")
+assert(not codebase_text:find("Turn ", 1, true), "standalone turn rows remain in Codebase")
+assert(not codebase_text:find("Change ", 1, true), "standalone change rows remain in Codebase")
+assert(codebase_text:find("01,02 │ example.txt", 1, true), "change ordering is not attached directly to files")
 assert(not codebase_text:find("01turn%-"), "codebase pane leaked raw Codex turn metadata")
 
 -- Commit search accepts both change numbers and message fragments, highlights
@@ -79,8 +80,8 @@ local function window_title(window)
   return title
 end
 assert(
-  window_title(ui_state.windows.source):find("#002 · build realistic feature · Turn 2 · Change 2", 1, true),
-  "source title does not show the commit, Codex turn, and in-commit change number"
+  window_title(ui_state.windows.source) == " #002 · build realistic feature ",
+  "source title should show only the Git commit and message"
 )
 
 local changes_before_search = vim.api.nvim_win_get_config(ui_state.windows.changes)
@@ -150,7 +151,7 @@ assert(ui_state.file_search.query == "deep", "file search query was not retained
 assert(#ui_state.file_search.matches == 1, "file search should find one deep file")
 local filtered_files = vim.api.nvim_buf_get_lines(roles.files, 0, -1, false)
 assert(filtered_files[#filtered_files]:sub(-#"deep.txt") == "deep.txt", "file search did not filter nonmatching paths")
-assert(table.concat(filtered_files, "\n"):find("Turn 1", 1, true), "file search hid the commit's turn ordering")
+assert(not table.concat(filtered_files, "\n"):find("Turn ", 1, true), "file search restored a standalone turn row")
 assert(vim.b[roles.source].codex_timeline_path == "deep.txt", "file search did not open its historical result")
 ui.toggle_search_bar("files")
 assert(ui_state.search_bars.files == nil, "file search bar did not toggle closed")
@@ -404,10 +405,8 @@ assert(vim.wo[ui_state.windows.source].winbar:find("deep.txt", 1, true), "file p
 -- Moving backward inside the selected Git commit reconstructs the full
 -- earlier Codex turn and its event-local highlights.
 ui.search_files("added.txt")
-vim.api.nvim_set_current_win(ui_state.windows.files)
-vim.api.nvim_win_set_cursor(ui_state.windows.files, { 1, 0 })
-vim.cmd.doautocmd("CursorMoved")
-assert(ui_state.file_search.query == "", "file search was not cleared when the selected turn changed")
+ui.move_change(-1)
+assert(ui_state.file_search.query == "", "file search was not cleared when the selected change changed")
 assert(window_title(ui_state.windows.files) == " Codebase ", "codebase title retained a stale commit search")
 local earlier_files = table.concat(vim.api.nvim_buf_get_lines(roles.files, 0, -1, false), "\n")
 assert(earlier_files:find("unchanged.txt", 1, true), "earlier snapshot lost an unchanged file")

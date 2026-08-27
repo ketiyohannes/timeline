@@ -217,12 +217,9 @@ local function current_file()
   return nil
 end
 
-local function source_title(event)
+local function source_title()
   local commit = state.commit
   local commit_text = commit and string.format("%s · %s", commit_marker(commit), commit.subject) or "Timeline"
-  if event.commit_turn_number then
-    return string.format(" %s · Turn %d · Change %d ", commit_text, event.commit_turn_number, event.commit_sequence)
-  end
   return string.format(" %s ", commit_text)
 end
 
@@ -317,7 +314,7 @@ local function render_source()
 
   if valid_window(state.windows.source) then
     vim.api.nvim_win_set_config(state.windows.source, {
-      title = source_title(event),
+      title = source_title(),
       title_pos = "center",
     })
     vim.wo[state.windows.source].winbar = source_winbar(path)
@@ -646,15 +643,8 @@ local function render_files(preferred_path)
   vim.api.nvim_buf_clear_namespace(buffer, file_search_namespace, 0, -1)
   local lines = {}
   for _, row in ipairs(state.file_rows) do
-    if row.kind == "event" then
-      local turn = row.event.commit_turn_number and string.format("Turn %d", row.event.commit_turn_number) or "Recorded change"
-      lines[#lines + 1] = string.format("%s · Change %d · %s", turn, row.event.commit_sequence, row.event.subject)
-    elseif row.kind == "separator" then
-      lines[#lines + 1] = "── Codebase at selected change ──"
-    else
-      local label = order_label(state.file_orders[row.path])
-      lines[#lines + 1] = label ~= "" and string.format("%s │ %s", label, row.path) or row.path
-    end
+    local label = order_label(state.file_orders[row.path])
+    lines[#lines + 1] = label ~= "" and string.format("%s │ %s", label, row.path) or row.path
   end
   set_lines(buffer, lines)
   for index, row in ipairs(state.file_rows) do
@@ -668,9 +658,7 @@ local function render_files(preferred_path)
         priority = 50,
       })
     end
-    if row.kind == "event" then
-      vim.api.nvim_buf_add_highlight(buffer, namespace, "CodexTimelineChangeNumber", index - 1, 0, -1)
-    elseif row.kind == "file" and state.file_orders[row.path] then
+    if row.kind == "file" and state.file_orders[row.path] then
       local label = order_label(state.file_orders[row.path])
       vim.api.nvim_buf_add_highlight(buffer, namespace, "CodexTimelineChangeNumber", index - 1, 0, #label)
     end
@@ -727,16 +715,6 @@ apply_file_filter = function(query, preferred_path)
   state.visible_files = visible
 
   local rows = {}
-  local has_codex_events = false
-  for _, event in ipairs((state.commit and state.commit.events) or {}) do
-    if event.commit_turn_number then has_codex_events = true break end
-  end
-  if has_codex_events then
-    for _, event in ipairs(state.commit.events) do
-      if event.commit_turn_number then rows[#rows + 1] = { kind = "event", event = event } end
-    end
-    rows[#rows + 1] = { kind = "separator" }
-  end
   for _, path in ipairs(visible) do rows[#rows + 1] = { kind = "file", path = path } end
   state.file_rows = rows
 
@@ -857,28 +835,7 @@ local function select_middle_row()
   if not valid_window(state.windows.files) then return end
   local row = state.file_rows[vim.api.nvim_win_get_cursor(state.windows.files)[1]]
   if not row then return end
-  if row.kind == "event" and not same_event(state.event, row.event) then
-    state.event = row.event
-    state.file_search = { query = "", matches = {}, index = 0 }
-    state.code_search = empty_code_search()
-    state.snapshot_cache = {}
-    state.order_cache = {}
-    state.provenance_cache = {}
-    local files, tree_err = git.tree(state.root, row.event)
-    local changes, changes_err = git.changes(state.root, row.event)
-    if not files or not changes then
-      vim.notify("Timeline: " .. (tree_err or changes_err or "unable to read snapshot"), vim.log.levels.ERROR)
-      return
-    end
-    for path, change in pairs(changes) do if change.kind == "D" then files[#files + 1] = path end end
-    table.sort(files)
-    state.files, state.changes = files, changes
-    local selected_path
-    for _, path in ipairs(files) do if changes[path] then selected_path = path break end end
-    apply_file_filter("", selected_path)
-  elseif row.kind == "file" then
-    render_source()
-  end
+  if row.kind == "file" then render_source() end
 end
 
 local function render_commits(preferred_commit)
@@ -1068,7 +1025,7 @@ local function move_event(direction)
 end
 
 
-local function move_recorded_change(direction)
+function M.move_change(direction)
   local events = {}
   for _, event in ipairs((state.commit and state.commit.events) or {}) do
     if event.commit_turn_number then events[#events + 1] = event end
@@ -1120,10 +1077,6 @@ local function search_bar_title(role)
       #state.code_search.matches)
   end
   local marker = state.commit and commit_marker(state.commit) or "current"
-  if state.event and state.event.commit_turn_number then
-    marker = string.format("%s · Turn %d · Change %d", marker,
-      state.event.commit_turn_number, state.event.commit_sequence)
-  end
   return string.format(" Search files in %s ", marker)
 end
 
@@ -1384,8 +1337,8 @@ function M.open(opts)
   map_all("<Esc>", close, "Close Timeline")
   map_all("[c", function() move_event(-1) end, "Previous commit")
   map_all("]c", function() move_event(1) end, "Next commit")
-  map_all("[t", function() move_recorded_change(-1) end, "Previous Codex change in commit")
-  map_all("]t", function() move_recorded_change(1) end, "Next Codex change in commit")
+  map_all("[t", function() M.move_change(-1) end, "Previous Codex change in commit")
+  map_all("]t", function() M.move_change(1) end, "Next Codex change in commit")
   map_all("/", function() M.search() end, "Search commits")
   map_all("n", function() M.next_match(1) end, "Next commit search match")
   map_all("N", function() M.next_match(-1) end, "Previous commit search match")

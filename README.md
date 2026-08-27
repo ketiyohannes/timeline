@@ -136,10 +136,10 @@ The old `:CodexTimeline*` commands remain as compatibility aliases, but new conf
 The browser contains three panes:
 
 1. **Commits** — real Git commits, always ordered by Git history.
-2. **Codebase** — ordered Codex turns/changes inside the selected commit, followed by every file that existed at that point.
+2. **Codebase** — every file at the selected point, with Codex change numbers attached directly to touched paths.
 3. **Code** — the complete selected file with the selected Codex change highlighted.
 
-Timeline never promotes an individual Codex tool snapshot to the commit list. It matches the snapshot trees to real Git commits and nests the captured work beneath the commit that contains it. If the latest recorded work has not been committed yet, it is collected under `WIP Uncommitted changes`. A Git-only repository simply shows its commits and file trees without turn rows.
+Timeline never promotes an individual Codex tool snapshot to the commit list. It matches the snapshot trees to real Git commits and keeps the captured ordering inside the commit. If the latest recorded work has not been committed yet, it is collected under `WIP Uncommitted changes`. A Git-only repository simply shows its commits and file trees without invented indicators.
 
 ### Change indicators on files and code
 
@@ -179,7 +179,7 @@ Changed files are selected automatically. Added files are green, deleted files a
 
 While the browser is open, it watches the selected Timeline ref and Git `HEAD`. A completed Codex tool call appears automatically under WIP, and a new Git commit automatically regroups those changes beneath the commit—there is no need to reopen `:Timeline`. If you were viewing the newest change, the browser follows it; an older selection stays in place. The `r` mapping remains available as a manual full reopen.
 
-The three panes resize and recenter automatically whenever the Neovim window changes size. Commits never contains Codex turns. When recorded Codex metadata is present, Codebase adds human-readable rows such as `Turn 1 · Change 1` and `Turn 2 · Change 2` above the complete tree for the selected change, and prefixes touched files with the corresponding change numbers. Raw task, turn, and tool-use UUIDs stay hidden. The Code pane shows the Git commit, turn, and in-commit change number in its title, with the opened repository-relative file path fixed directly beneath it.
+The three panes resize and recenter automatically whenever the Neovim window changes size. Neither Commits nor Codebase adds standalone turn/change rows. Codebase attaches ordering directly to touched files, while Code attaches it directly to changed lines. Raw task, turn, and tool-use UUIDs stay hidden. The Code pane shows only the Git commit number and message in its title, with the opened repository-relative file path fixed directly beneath it.
 
 When you select a changed file, the Code pane keeps the complete file loaded but scrolls so its first highlighted line is at the top of the viewport. A change beginning at line 300 therefore opens with line 300 visible first.
 
@@ -188,13 +188,13 @@ When you select a changed file, the Code pane keeps the complete file loaded but
 The Code pane keeps the event and file identity visible as two separate fixed rows:
 
 ```text
-╭── #012 · refactor authentication · Turn 3 · Change 2 ─────╮
+╭──────────── #012 · refactor authentication ────────────────╮
 │                     src/auth/session.ts                     │
 │  1  export function createSession() {                       │
 │  2    // complete historical source                         │
 ```
 
-- The border title starts with the real Git commit and message, followed by the selected Codex turn and its order inside that commit when available.
+- The border title contains only the real Git commit number and message.
 - The row beneath it is the repository-relative path of the file currently open in Code.
 - Selecting a different Codebase row or file-search result updates the path immediately.
 - Scrolling the source keeps both rows fixed, including when Timeline starts at a deep highlighted line.
@@ -215,13 +215,13 @@ Examples:
 
 The selected commit is retained while it still matches. Otherwise, the first later match is opened, wrapping to the first result when needed. Press `Enter` or `Esc` to hide the bar while keeping its filter active. Then use `n` or `N` from any pane to move forward or backward through the filtered results; navigation wraps at either end. Pressing `/` again also toggles the bar.
 
-Selecting a search result opens its final recorded state. Codebase shows its ordered Codex changes, if any, and the complete file tree. Selecting a turn/change row reconstructs that intermediate state inside the commit.
+Selecting a search result opens its final recorded state. Codebase shows the complete file tree with change numbers attached to touched paths. Use `[t` and `]t` to reconstruct earlier or later recorded changes inside the commit.
 
 Delete all text in the bar to restore every commit. A query with no results removes every row from Commits, leaves the current snapshot open in the other panes, and shows `no matches` in the title. Use `F` to search paths in the selected snapshot; raw Codex UUIDs, contents, timestamps, and hashes are not searched.
 
 ### Searching files in a commit
 
-Press `F` from any pane to open a dedicated file-search bar above Codebase. Its title identifies the commit and, when present, its active turn/change, such as `Search files in #012 · Turn 3 · Change 2`. The bar and Codebase pane resize together with the rest of the browser.
+Press `F` from any pane to open a dedicated file-search bar above Codebase. Its title identifies the commit, such as `Search files in #012`. The bar and Codebase pane resize together with the rest of the browser.
 
 Filtering happens after every keystroke. Nonmatching paths are removed from Codebase immediately instead of merely being highlighted.
 
@@ -281,7 +281,7 @@ require("timeline").setup({
 })
 ```
 
-`refresh_interval` is measured in milliseconds and has a minimum of `100`. The watcher only checks the selected Git ref hash; source trees are rebuilt only when that hash changes. Set `live_refresh = false` to disable it.
+`refresh_interval` is measured in milliseconds and has a minimum of `100`. The watcher checks the selected Timeline ref and Git `HEAD`; source trees are rebuilt only when one changes. Set `live_refresh = false` to disable it.
 
 Palette overrides:
 
