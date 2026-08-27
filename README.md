@@ -127,7 +127,7 @@ Make one Codex edit in the repository, then open `:Timeline`. The new task shoul
 | `:TimelineDisable` | Disable automatic recording for this repository |
 | `:TimelineInstallHooks` | Safely install Codex lifecycle hooks |
 | `:TimelineUninstallHooks` | Remove only Timeline's Codex hooks |
-| `]t` / `[t` | Jump to the next or previous annotated line |
+| `]t` / `[t` | Outside the Timeline browser, jump to the next or previous annotated line |
 
 The old `:CodexTimeline*` commands remain as compatibility aliases, but new configurations should use `:Timeline*`.
 
@@ -158,7 +158,7 @@ Keys:
 
 | Key | Action |
 |---|---|
-| `j` / `k` | Move through commits, changes, or files |
+| `j` / `k` | Move through commits or files |
 | `Enter` (panes) | Move from Commits to Codebase, then to Code |
 | `1` / `2` / `3` | Focus a pane directly |
 | `[c` / `]c` | Select the previous or next Git commit |
@@ -185,7 +185,7 @@ When you select a changed file, the Code pane keeps the complete file loaded but
 
 ### Code pane header
 
-The Code pane keeps the event and file identity visible as two separate fixed rows:
+The Code pane keeps the commit and file identity visible as two separate fixed rows:
 
 ```text
 ╭──────────── #012 · refactor authentication ────────────────╮
@@ -203,7 +203,7 @@ The path is display-only: it is not inserted into the historical buffer, does no
 
 ### Searching commits
 
-Press `/` from any pane to open a dedicated `Search commits` bar above Changes. The pane makes room for the bar, and both stay aligned as Neovim resizes. Nothing is entered through Neovim's bottom command line.
+Press `/` from any pane to open a dedicated `Search commits` bar above Commits. The pane makes room for the bar, and both stay aligned as Neovim resizes. Nothing is entered through Neovim's bottom command line.
 
 Filtering happens after every keystroke. Nonmatching commits disappear immediately, while the Commits title reports the remaining result count. Search is case-insensitive and matches the visible Git commit number and commit message.
 

@@ -59,12 +59,14 @@ COMMANDS                                                  *timeline-commands*
     hooks must also be approved in Codex; see |timeline-hook-approval|.
 
 ]t / [t
-    Jump to the next or previous annotated line.
+    Outside the Timeline browser, jump to the next or previous annotated line.
+    Inside the browser these keys select the next or previous recorded Codex
+    change within the active Git commit.
 
 ==============================================================================
 CODE PANE HEADER                                      *timeline-code-header*
 
-Code keeps the selected commit/change and file visible in two fixed rows:
+Code keeps the selected commit and file visible in two fixed rows:
 >
     #012 · refactor authentication
     src/auth/session.ts
@@ -84,7 +86,7 @@ complete path remains available in Codebase and file search.
 ==============================================================================
 COMMIT SEARCH                                             *timeline-search*
 
-Press / from any Timeline pane to toggle a dedicated search bar above Changes.
+Press / from any Timeline pane to toggle a dedicated search bar above Commits.
 The pane makes room for the bar, and both resize with Neovim. The query never
 uses the bottom command line.
 
