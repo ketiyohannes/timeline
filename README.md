@@ -152,7 +152,7 @@ Inside a recorded commit, Codebase prefixes every touched file with the ordered 
 
 `README.md` was first touched by Change 1 and touched again by Change 3. `src/service.ts` was first touched by Change 2. Files unchanged by Codex have no prefix. If one Codex tool call changes several files, those files share the same change number because Timeline records that tool call as one atomic change rather than inventing an order Git cannot prove.
 
-Code uses the same numbering. Changed lines carry a right-aligned marker such as `Δ01` or `Δ03`, so lines introduced by different changes remain distinguishable in the complete historical file. Event-local additions and removals keep their bold `+` and `-` signs and colored backgrounds. A removed line is labeled with the change that removed it; a surviving line retains the change that last introduced or modified it.
+Code uses the same numbering. Every surviving changed line remains highlighted and carries a right-aligned marker such as `Δ01` or `Δ03`, so earlier and later diffs stay visible together in the complete historical file. Every touched file remains highlighted in Codebase as well. The actively selected change uses stronger styling: event-local additions and removals keep their bold green/red `+` and `-` signs and backgrounds. A removed line is labeled with the change that removed it; a surviving line retains the change that last introduced or modified it.
 
 Keys:
 

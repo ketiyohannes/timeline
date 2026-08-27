@@ -309,7 +309,8 @@ local function render_source()
       vim.api.nvim_buf_set_extmark(buffer, provenance_namespace, display_line - 1, 0, {
         virt_text = { { string.format("  Δ%02d", order), "CodexTimelineChangeNumber" } },
         virt_text_pos = "right_align",
-        priority = 90,
+        line_hl_group = "CodexTimelineChangeLine",
+        priority = 40,
       })
     end
   end
@@ -658,6 +659,9 @@ local function render_files(preferred_path)
   set_lines(buffer, lines)
   for index, row in ipairs(state.file_rows) do
     local group = row.kind == "file" and file_highlight(state.changes[row.path]) or nil
+    if not group and row.kind == "file" and state.file_orders[row.path] then
+      group = "CodexTimelineChangeFile"
+    end
     if group then
       vim.api.nvim_buf_set_extmark(buffer, namespace, index - 1, 0, {
         line_hl_group = group,

@@ -168,7 +168,8 @@ assert(file_search_marks[1][4].line_hl_group == "TimelineSearchCurrent", "select
 assert(window_title(ui_state.windows.files):find("1 match", 1, true), "codebase title lacks file result count")
 
 ui.search_files(".txt")
-assert(#ui_state.file_search.matches == 4, "file search did not cover the complete snapshot tree")
+assert(#ui_state.file_search.matches == 5, "file search did not cover the complete snapshot tree")
+ui.next_file_match(1)
 ui.next_file_match(1)
 ui.next_file_match(1)
 ui.next_file_match(1)
@@ -176,7 +177,7 @@ local selected_row = ui_state.file_rows[vim.api.nvim_win_get_cursor(ui_state.win
 assert(selected_row and selected_row.path == ui_state.visible_files[1], "next file match did not wrap")
 ui.next_file_match(-1)
 selected_row = ui_state.file_rows[vim.api.nvim_win_get_cursor(ui_state.windows.files)[1]]
-assert(selected_row and selected_row.path == ui_state.visible_files[4], "previous file match did not wrap")
+assert(selected_row and selected_row.path == ui_state.visible_files[5], "previous file match did not wrap")
 ui.search_files("")
 assert(ui_state.file_search.query == "" and #ui_state.file_search.matches == 0, "empty file search did not clear")
 assert(#vim.api.nvim_buf_get_extmarks(roles.files, file_search_namespace, 0, -1, {}) == 0, "file search highlights remain")
@@ -184,6 +185,7 @@ assert(#vim.api.nvim_buf_get_extmarks(roles.files, file_search_namespace, 0, -1,
 local file_text = table.concat(vim.api.nvim_buf_get_lines(roles.files, 0, -1, false), "\n")
 assert(file_text:find("01,02 │ example.txt", 1, true), "file does not show every in-commit change that touched it")
 assert(file_text:find("02 │ deep.txt", 1, true), "file does not show its first Codex change indicator")
+assert(file_text:find("01 │ early.txt", 1, true), "earlier touched file lost its change indicator")
 assert(file_text:find("example.txt", 1, true), "changed file is missing from snapshot codebase")
 assert(file_text:find("added.txt", 1, true), "added file is missing from snapshot codebase")
 assert(file_text:find("unchanged.txt", 1, true), "deleted file is missing from event view")
@@ -203,13 +205,33 @@ assert(file_groups.CodexTimelineDeleteFile, "deleted files should use the strong
 assert(file_groups.CodexTimelineChangeFile, "modified files should use the stronger change highlight")
 
 local file_lines = vim.api.nvim_buf_get_lines(roles.files, 0, -1, false)
-local example_row, deep_row
+local example_row, deep_row, early_row
 for index, path in ipairs(file_lines) do
   if path:sub(-#"example.txt") == "example.txt" then example_row = index end
   if path:sub(-#"deep.txt") == "deep.txt" then deep_row = index end
+  if path:sub(-#"early.txt") == "early.txt" then early_row = index end
 end
 assert(example_row, "example file is missing")
 assert(deep_row, "deep file is missing")
+assert(early_row, "earlier changed file is missing")
+
+-- A file changed by an earlier Codex change remains highlighted in the later
+-- snapshot, and its surviving code keeps both the number and background.
+vim.api.nvim_set_current_win(ui_state.windows.files)
+vim.api.nvim_win_set_cursor(ui_state.windows.files, { early_row, 0 })
+vim.cmd.doautocmd("CursorMoved")
+local persistent_marks = vim.api.nvim_buf_get_extmarks(
+  roles.source,
+  vim.api.nvim_get_namespaces().timeline_change_provenance,
+  0,
+  -1,
+  { details = true }
+)
+assert(#persistent_marks == 1, "earlier surviving diff is not marked in the later snapshot")
+assert(persistent_marks[1][4].virt_text[1][1]:find("Δ01", 1, true), "earlier diff has the wrong indicator")
+assert(persistent_marks[1][4].line_hl_group == "CodexTimelineChangeLine",
+  "earlier surviving diff is numbered but not highlighted")
+
 vim.api.nvim_set_current_win(ui_state.windows.files)
 vim.api.nvim_win_set_cursor(ui_state.windows.files, { example_row, 0 })
 vim.cmd.doautocmd("CursorMoved")
@@ -390,6 +412,13 @@ assert(window_title(ui_state.windows.files) == " Codebase ", "codebase title ret
 local earlier_files = table.concat(vim.api.nvim_buf_get_lines(roles.files, 0, -1, false), "\n")
 assert(earlier_files:find("unchanged.txt", 1, true), "earlier snapshot lost an unchanged file")
 assert(not earlier_files:find("added.txt", 1, true), "earlier snapshot leaked a future file")
+for row, item in ipairs(ui_state.file_rows) do
+  if item.kind == "file" and item.path == "example.txt" then
+    vim.api.nvim_win_set_cursor(ui_state.windows.files, { row, 0 })
+    vim.cmd.doautocmd("CursorMoved")
+    break
+  end
+end
 local earlier_source = vim.api.nvim_buf_get_lines(roles.source, 0, -1, false)
 assert(earlier_source[1] == "alpha" and earlier_source[2] == "beta", "earlier source snapshot was not reconstructed")
 local earlier_marks = vim.api.nvim_buf_get_extmarks(roles.source, snapshot_namespace, 0, -1, { details = true })

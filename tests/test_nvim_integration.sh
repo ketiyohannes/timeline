@@ -19,6 +19,7 @@ git -C "$test_root" add deep.txt
 git -C "$test_root" commit -qm baseline
 "$project_root/bin/timeline" start --repo "$test_root" --session nvim >/dev/null
 printf 'alpha\nbeta\n' > "$test_root/example.txt"
+printf 'this line was added by the first Codex change\n' > "$test_root/early.txt"
 "$project_root/bin/timeline" checkpoint --repo "$test_root" --session nvim --label apply_patch \
   --codex-session session-real --event PreToolUse --tool apply_patch \
   --turn 01turn-first --tool-use exec-first >/dev/null

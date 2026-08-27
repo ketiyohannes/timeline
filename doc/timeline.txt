@@ -165,9 +165,11 @@ tool call share one number because no reliable within-tool file order exists.
 
 Code lines use the same provenance as right-aligned markers: "delta 01" is a line
 introduced or last modified by Change 1. The actual UI uses the delta character.
-Current additions and removals retain their + and - signs and bold backgrounds;
-a removed line receives the number of the change that removed it. Unchanged
-Git-only lines have no invented marker.
+Every surviving recorded diff keeps an amber change background, and every
+touched file remains highlighted in Codebase. Current additions and removals
+override that background with their stronger green/red + and - styling. A
+removed line receives the number of the change that removed it. Unchanged
+Git-only lines have no invented marker or highlight.
 
 ==============================================================================
 CODE SEARCH                                           *timeline-code-search*
