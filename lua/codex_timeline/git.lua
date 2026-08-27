@@ -322,6 +322,47 @@ function M.changes(root, event)
   return changes
 end
 
+function M.file_change_orders(root, commit, selected_event)
+  local orders = {}
+  for _, event in ipairs(commit.events or {}) do
+    if event.commit_sequence then
+      local changes, err = M.changes(root, event)
+      if not changes then return nil, err end
+      for path in pairs(changes) do
+        orders[path] = orders[path] or {}
+        orders[path][#orders[path] + 1] = event.commit_sequence
+      end
+    end
+    if selected_event and event.hash == selected_event.hash then break end
+  end
+  return orders
+end
+
+function M.line_change_orders(root, commit, event, path)
+  local hashes = {}
+  for _, candidate in ipairs(commit.events or {}) do
+    if candidate.commit_sequence then hashes[candidate.hash] = candidate.commit_sequence end
+    if candidate.hash == event.hash then break end
+  end
+  if next(hashes) == nil then return {} end
+
+  local output = run({ "git", "blame", "--line-porcelain", event.hash, "--", path }, root)
+  if not output then return {} end
+  local orders = {}
+  for line in output:gmatch("[^\n]+") do
+    local hash, _, final_line, count = line:match("^%^?([0-9a-f]+) (%d+) (%d+) ?(%d*)$")
+    if hash then
+      local order = hashes[hash]
+      local first = tonumber(final_line)
+      local length = tonumber(count) or 1
+      if order and first then
+        for offset = 0, length - 1 do orders[first + offset] = order end
+      end
+    end
+  end
+  return orders
+end
+
 function M.file_content(root, event, path)
   local output, err = run({ "git", "show", event.hash .. ":" .. path }, root)
   if not output then

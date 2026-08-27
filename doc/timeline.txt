@@ -151,12 +151,23 @@ For a commit with Codex metadata, Codebase starts with rows such as:
     Turn 1 · Change 1 · apply_patch
     Turn 2 · Change 2 · refactor
     -- Codebase at selected change --
-    src/app.ts
-    src/store.ts
+    01,02 | src/app.ts
+    02    | src/store.ts
 <
 Selecting a change row rebuilds the complete historical codebase at that point.
 For imported or otherwise Git-only commits, Codebase contains only the file tree
 because Git cannot recover the order of edits made inside an existing commit.
+
+The numbers before a path are every recorded change that touched it up to the
+selected point. A file first changed in Change 1 displays "01"; if Change 3
+touches it again, it displays "01,03". Several files changed by one atomic Codex
+tool call share one number because no reliable within-tool file order exists.
+
+Code lines use the same provenance as right-aligned markers: "delta 01" is a line
+introduced or last modified by Change 1. The actual UI uses the delta character.
+Current additions and removals retain their + and - signs and bold backgrounds;
+a removed line receives the number of the change that removed it. Unchanged
+Git-only lines have no invented marker.
 
 ==============================================================================
 CODE SEARCH                                           *timeline-code-search*

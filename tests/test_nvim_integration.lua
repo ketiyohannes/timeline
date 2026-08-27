@@ -149,7 +149,7 @@ vim.cmd.doautocmd("TextChangedI")
 assert(ui_state.file_search.query == "deep", "file search query was not retained")
 assert(#ui_state.file_search.matches == 1, "file search should find one deep file")
 local filtered_files = vim.api.nvim_buf_get_lines(roles.files, 0, -1, false)
-assert(filtered_files[#filtered_files] == "deep.txt", "file search did not filter nonmatching paths")
+assert(filtered_files[#filtered_files]:sub(-#"deep.txt") == "deep.txt", "file search did not filter nonmatching paths")
 assert(table.concat(filtered_files, "\n"):find("Turn 1", 1, true), "file search hid the commit's turn ordering")
 assert(vim.b[roles.source].codex_timeline_path == "deep.txt", "file search did not open its historical result")
 ui.toggle_search_bar("files")
@@ -182,6 +182,8 @@ assert(ui_state.file_search.query == "" and #ui_state.file_search.matches == 0, 
 assert(#vim.api.nvim_buf_get_extmarks(roles.files, file_search_namespace, 0, -1, {}) == 0, "file search highlights remain")
 
 local file_text = table.concat(vim.api.nvim_buf_get_lines(roles.files, 0, -1, false), "\n")
+assert(file_text:find("01,02 │ example.txt", 1, true), "file does not show every in-commit change that touched it")
+assert(file_text:find("02 │ deep.txt", 1, true), "file does not show its first Codex change indicator")
 assert(file_text:find("example.txt", 1, true), "changed file is missing from snapshot codebase")
 assert(file_text:find("added.txt", 1, true), "added file is missing from snapshot codebase")
 assert(file_text:find("unchanged.txt", 1, true), "deleted file is missing from event view")
@@ -203,8 +205,8 @@ assert(file_groups.CodexTimelineChangeFile, "modified files should use the stron
 local file_lines = vim.api.nvim_buf_get_lines(roles.files, 0, -1, false)
 local example_row, deep_row
 for index, path in ipairs(file_lines) do
-  if path == "example.txt" then example_row = index end
-  if path == "deep.txt" then deep_row = index end
+  if path:sub(-#"example.txt") == "example.txt" then example_row = index end
+  if path:sub(-#"deep.txt") == "deep.txt" then deep_row = index end
 end
 assert(example_row, "example file is missing")
 assert(deep_row, "deep file is missing")
@@ -298,6 +300,14 @@ assert(source_marks[1][4].line_hl_group == "CodexTimelineDeleteLine", "removed l
 assert(source_marks[1][4].sign_hl_group == "CodexTimelineDeleteSign", "removed sign highlight is not bold")
 assert(source_marks[2][4].line_hl_group == "CodexTimelineAddLine", "added line highlight is not theme-aware")
 assert(source_marks[2][4].sign_hl_group == "CodexTimelineAddSign", "added sign highlight is not bold")
+local provenance_namespace = vim.api.nvim_get_namespaces().timeline_change_provenance
+local provenance_marks = vim.api.nvim_buf_get_extmarks(
+  roles.source, provenance_namespace, 0, -1, { details = true }
+)
+assert(#provenance_marks == 2, "current code diff lines are missing their change-order indicators")
+for _, mark in ipairs(provenance_marks) do
+  assert(mark[4].virt_text[1][1]:find("Δ02", 1, true), "code line has the wrong in-commit change indicator")
+end
 
 -- Code search can switch between the opened file and every file in the
 -- selected historical snapshot. Cross-file results update both source panes.
@@ -384,6 +394,11 @@ local earlier_source = vim.api.nvim_buf_get_lines(roles.source, 0, -1, false)
 assert(earlier_source[1] == "alpha" and earlier_source[2] == "beta", "earlier source snapshot was not reconstructed")
 local earlier_marks = vim.api.nvim_buf_get_extmarks(roles.source, snapshot_namespace, 0, -1, { details = true })
 assert(#earlier_marks == 1 and vim.trim(earlier_marks[1][4].sign_text) == "+", "earlier addition highlight is wrong")
+local earlier_provenance = vim.api.nvim_buf_get_extmarks(
+  roles.source, provenance_namespace, 0, -1, { details = true }
+)
+assert(#earlier_provenance == 1 and earlier_provenance[1][4].virt_text[1][1]:find("Δ01", 1, true),
+  "first code diff does not retain its Change 1 indicator")
 
 -- Confirming a code result exits the floating browser and opens the real file
 -- at the matching code in the normal editor.

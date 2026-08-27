@@ -5,6 +5,7 @@ local namespace = vim.api.nvim_create_namespace("codex_timeline_snapshot")
 local search_namespace = vim.api.nvim_create_namespace("timeline_search")
 local file_search_namespace = vim.api.nvim_create_namespace("timeline_file_search")
 local code_search_namespace = vim.api.nvim_create_namespace("timeline_code_search")
+local provenance_namespace = vim.api.nvim_create_namespace("timeline_change_provenance")
 local update_search_bar
 local render_code_search
 local apply_file_filter
@@ -25,6 +26,7 @@ local state = {
   files = {},
   visible_files = {},
   changes = {},
+  file_orders = {},
   root = nil,
   ref = nil,
   head_hash = nil,
@@ -34,6 +36,8 @@ local state = {
   file_search = { query = "", matches = {}, index = 0 },
   code_search = empty_code_search(),
   snapshot_cache = {},
+  order_cache = {},
+  provenance_cache = {},
   navigating_code_search = false,
   refresh_timer = nil,
   refreshing = false,
@@ -66,10 +70,13 @@ local function close()
   state.commit = nil
   state.file_rows = {}
   state.visible_files = {}
+  state.file_orders = {}
   state.search = { query = "", matches = {}, index = 0 }
   state.file_search = { query = "", matches = {}, index = 0 }
   state.code_search = empty_code_search()
   state.snapshot_cache = {}
+  state.order_cache = {}
+  state.provenance_cache = {}
   state.navigating_code_search = false
   state.event = nil
   state.head_hash = nil
@@ -234,6 +241,19 @@ local function get_file_snapshot(path)
   return lines, highlights, err
 end
 
+local function get_line_orders(path)
+  if state.provenance_cache[path] then return state.provenance_cache[path] end
+  local orders = git.line_change_orders(state.root, state.commit, state.event, path)
+  state.provenance_cache[path] = orders
+  return orders
+end
+
+local function order_label(orders)
+  local labels = {}
+  for _, order in ipairs(orders or {}) do labels[#labels + 1] = string.format("%02d", order) end
+  return table.concat(labels, ",")
+end
+
 local function render_source()
   local event, path = state.event, current_file()
   if not event or not path or not state.buffers.source then
@@ -256,6 +276,7 @@ local function render_source()
   end
   vim.api.nvim_buf_clear_namespace(buffer, namespace, 0, -1)
   vim.api.nvim_buf_clear_namespace(buffer, code_search_namespace, 0, -1)
+  vim.api.nvim_buf_clear_namespace(buffer, provenance_namespace, 0, -1)
   set_lines(buffer, lines)
   vim.b[buffer].codex_timeline_path = path
   vim.bo[buffer].filetype = vim.filetype.match({ filename = path }) or ""
@@ -268,6 +289,29 @@ local function render_source()
       line_hl_group = added and "CodexTimelineAddLine" or "CodexTimelineDeleteLine",
       priority = 100,
     })
+  end
+
+  local source_orders = get_line_orders(path)
+  local deleted_rows = {}
+  for _, highlight in ipairs(highlights or {}) do
+    if highlight.kind == "delete" then deleted_rows[highlight.line] = true end
+  end
+  local source_line = 0
+  for display_line = 1, #lines do
+    local order
+    if deleted_rows[display_line] then
+      order = event.commit_sequence
+    else
+      source_line = source_line + 1
+      order = source_orders[source_line]
+    end
+    if order then
+      vim.api.nvim_buf_set_extmark(buffer, provenance_namespace, display_line - 1, 0, {
+        virt_text = { { string.format("  Δ%02d", order), "CodexTimelineChangeNumber" } },
+        virt_text_pos = "right_align",
+        priority = 90,
+      })
+    end
   end
 
   if valid_window(state.windows.source) then
@@ -607,7 +651,8 @@ local function render_files(preferred_path)
     elseif row.kind == "separator" then
       lines[#lines + 1] = "── Codebase at selected change ──"
     else
-      lines[#lines + 1] = row.path
+      local label = order_label(state.file_orders[row.path])
+      lines[#lines + 1] = label ~= "" and string.format("%s │ %s", label, row.path) or row.path
     end
   end
   set_lines(buffer, lines)
@@ -618,8 +663,12 @@ local function render_files(preferred_path)
         line_hl_group = group,
         priority = 50,
       })
-    elseif row.kind == "event" then
+    end
+    if row.kind == "event" then
       vim.api.nvim_buf_add_highlight(buffer, namespace, "CodexTimelineChangeNumber", index - 1, 0, -1)
+    elseif row.kind == "file" and state.file_orders[row.path] then
+      local label = order_label(state.file_orders[row.path])
+      vim.api.nvim_buf_add_highlight(buffer, namespace, "CodexTimelineChangeNumber", index - 1, 0, #label)
     end
   end
   if state.file_search.query ~= "" then
@@ -651,6 +700,15 @@ end
 
 apply_file_filter = function(query, preferred_path)
   query = vim.trim(query or "")
+  local order_key = state.commit and state.event and (state.commit.hash .. ":" .. state.event.hash) or ""
+  if order_key ~= "" then
+    if not state.order_cache[order_key] then
+      state.order_cache[order_key] = git.file_change_orders(state.root, state.commit, state.event) or {}
+    end
+    state.file_orders = state.order_cache[order_key]
+  else
+    state.file_orders = {}
+  end
   local needle = query:lower()
   local matches, visible = {}, {}
   for row, path in ipairs(state.files) do
@@ -757,6 +815,8 @@ local function render_event()
     state.file_search = { query = "", matches = {}, index = 0 }
     state.code_search = empty_code_search()
     state.snapshot_cache = {}
+    state.order_cache = {}
+    state.provenance_cache = {}
     if update_search_bar then
       update_search_bar("files", "")
       update_search_bar("code", "")
@@ -798,6 +858,8 @@ local function select_middle_row()
     state.file_search = { query = "", matches = {}, index = 0 }
     state.code_search = empty_code_search()
     state.snapshot_cache = {}
+    state.order_cache = {}
+    state.provenance_cache = {}
     local files, tree_err = git.tree(state.root, row.event)
     local changes, changes_err = git.changes(state.root, row.event)
     if not files or not changes then
@@ -1013,6 +1075,8 @@ local function move_recorded_change(direction)
   index = math.max(1, math.min(#events, index + direction))
   state.event = events[index]
   state.snapshot_cache = {}
+  state.order_cache = {}
+  state.provenance_cache = {}
   local files = git.tree(state.root, state.event) or {}
   local changes = git.changes(state.root, state.event) or {}
   for path, change in pairs(changes) do if change.kind == "D" then files[#files + 1] = path end end
@@ -1225,6 +1289,8 @@ function M.open(opts)
   state.file_search = { query = "", matches = {}, index = 0 }
   state.code_search = empty_code_search()
   state.snapshot_cache = {}
+  state.order_cache = {}
+  state.provenance_cache = {}
   state.navigating_code_search = false
   local size = dimensions()
   for _, role in ipairs({ "changes", "files", "source" }) do

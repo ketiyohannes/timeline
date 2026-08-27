@@ -141,6 +141,19 @@ The browser contains three panes:
 
 Timeline never promotes an individual Codex tool snapshot to the commit list. It matches the snapshot trees to real Git commits and nests the captured work beneath the commit that contains it. If the latest recorded work has not been committed yet, it is collected under `WIP Uncommitted changes`. A Git-only repository simply shows its commits and file trees without turn rows.
 
+### Change indicators on files and code
+
+Inside a recorded commit, Codebase prefixes every touched file with the ordered changes that affected it:
+
+```text
+01,03 │ README.md
+02    │ src/service.ts
+```
+
+`README.md` was first touched by Change 1 and touched again by Change 3. `src/service.ts` was first touched by Change 2. Files unchanged by Codex have no prefix. If one Codex tool call changes several files, those files share the same change number because Timeline records that tool call as one atomic change rather than inventing an order Git cannot prove.
+
+Code uses the same numbering. Changed lines carry a right-aligned marker such as `Δ01` or `Δ03`, so lines introduced by different changes remain distinguishable in the complete historical file. Event-local additions and removals keep their bold `+` and `-` signs and colored backgrounds. A removed line is labeled with the change that removed it; a surviving line retains the change that last introduced or modified it.
+
 Keys:
 
 | Key | Action |
@@ -166,7 +179,7 @@ Changed files are selected automatically. Added files are green, deleted files a
 
 While the browser is open, it watches the selected Timeline ref and Git `HEAD`. A completed Codex tool call appears automatically under WIP, and a new Git commit automatically regroups those changes beneath the commit—there is no need to reopen `:Timeline`. If you were viewing the newest change, the browser follows it; an older selection stays in place. The `r` mapping remains available as a manual full reopen.
 
-The three panes resize and recenter automatically whenever the Neovim window changes size. Commits never contains Codex turns. When recorded Codex metadata is present, Codebase adds human-readable rows such as `Turn 1 · Change 1` and `Turn 2 · Change 2` above the complete tree for the selected change. Raw task, turn, and tool-use UUIDs stay hidden. The Code pane shows the Git commit, turn, and in-commit change number in its title, with the opened repository-relative file path fixed directly beneath it.
+The three panes resize and recenter automatically whenever the Neovim window changes size. Commits never contains Codex turns. When recorded Codex metadata is present, Codebase adds human-readable rows such as `Turn 1 · Change 1` and `Turn 2 · Change 2` above the complete tree for the selected change, and prefixes touched files with the corresponding change numbers. Raw task, turn, and tool-use UUIDs stay hidden. The Code pane shows the Git commit, turn, and in-commit change number in its title, with the opened repository-relative file path fixed directly beneath it.
 
 When you select a changed file, the Code pane keeps the complete file loaded but scrolls so its first highlighted line is at the top of the viewport. A change beginning at line 300 therefore opens with line 300 visible first.
 
