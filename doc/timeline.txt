@@ -42,7 +42,8 @@ COMMANDS                                                  *timeline-commands*
     and untracked state. This also happens automatically on first file open.
 
 :TimelineAnnotate
-    Add signs to current lines. "01" means event 1 introduced the line.
+    Explicitly add provenance signs to the current normal editor buffer. This
+    is opt-in; normal buffers have no Timeline signs by default.
 
 :TimelineClear
     Remove signs from the current buffer.
@@ -251,7 +252,7 @@ SETUP                                                        *timeline-setup*
 
 >lua
     require("timeline").setup({
-      annotate_on_buf_enter = true,
+      annotate_on_buf_enter = false,
       auto_sync = true,
       virtual_text = false,
       session = nil,
@@ -261,10 +262,16 @@ SETUP                                                        *timeline-setup*
     })
 <
 
-live_refresh watches the selected Timeline Git ref while the browser is open.
-refresh_interval is the polling interval in milliseconds and has a minimum of
-100. Only a changed ref causes the browser to rebuild source panes. Set
-live_refresh to false to disable the watcher.
+annotate_on_buf_enter defaults to false. Numbered path prefixes and delta line
+markers remain visible inside |:Timeline|, but normal editing buffers stay
+clean. Set this option to true only to opt into automatic editor annotations.
+Use |:TimelineAnnotate| for a one-off normal-buffer view and |:TimelineClear|
+to remove it.
+
+live_refresh watches the selected Timeline Git ref and Git HEAD while the
+browser is open. refresh_interval is the polling interval in milliseconds and
+has a minimum of 100. Only a changed ref or HEAD causes the browser to rebuild
+source panes. Set live_refresh to false to disable the watcher.
 
 With lazy.nvim:
 >lua

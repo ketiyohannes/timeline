@@ -9,7 +9,7 @@ Timeline is a Neovim time machine for Git repositories changed by Codex. It impo
 - A complete repository tree and full source files at every event.
 - Bold green additions, red deletions, and amber modified files.
 - Added and removed lines interleaved in their original full-file context.
-- Per-line annotations showing which event introduced the current line.
+- Numbered file and line provenance inside the Timeline browser only.
 - Hidden Codex session, turn, tool, and tool-use context for diagnostics.
 - Automatic recording in every Git repository unless explicitly disabled.
 
@@ -120,7 +120,7 @@ Make one Codex edit in the repository, then open `:Timeline`. The new task shoul
 |---|---|
 | `:Timeline` | Open the chronological codebase browser |
 | `:TimelineSync` | Import existing commits and synchronize current local state |
-| `:TimelineAnnotate` | Show the event that introduced each current line |
+| `:TimelineAnnotate` | Opt in to provenance signs in the current normal editor buffer |
 | `:TimelineSession` | Select a continuous, demo, or legacy timeline |
 | `:TimelineClear` | Clear line annotations |
 | `:TimelineEnable` | Enable automatic recording for this repository |
@@ -271,7 +271,7 @@ Ignored files are excluded. A snapshot covers every non-ignored worktree change 
 
 ```lua
 require("timeline").setup({
-  annotate_on_buf_enter = true,
+  annotate_on_buf_enter = false,
   auto_sync = true,
   virtual_text = false,
   session = nil,
@@ -280,6 +280,8 @@ require("timeline").setup({
   colors = {},
 })
 ```
+
+`annotate_on_buf_enter` defaults to `false`, keeping Timeline counters and provenance out of normal Neovim buffers. The numbered file prefixes and `ΔNN` line markers inside `:Timeline` are always available and are unaffected by this option. Set it to `true` only if you also want automatic signs in ordinary editing buffers, or invoke `:TimelineAnnotate` manually for a one-off view and `:TimelineClear` to remove them.
 
 `refresh_interval` is measured in milliseconds and has a minimum of `100`. The watcher checks the selected Timeline ref and Git `HEAD`; source trees are rebuilt only when one changes. Set `live_refresh = false` to disable it.
 

@@ -18,6 +18,13 @@ assert(#marks == 1, "expected exactly one annotated line")
 assert(marks[1][2] == 1, "expected gamma on the second line")
 assert(marks[1][4].sign_text == "02", "expected event #2 sign")
 
+-- Normal editor buffers stay clean unless annotation is explicitly invoked.
+timeline.clear()
+vim.cmd.edit(vim.fn.fnameescape(test_repo .. "/shared.lua"))
+vim.wait(100, function() return false end, 20)
+local normal_marks = vim.api.nvim_buf_get_extmarks(0, namespace, 0, -1, {})
+assert(#normal_marks == 0, "Timeline counters leaked into a normal Neovim buffer")
+
 timeline.open()
 local ui_state = require("codex_timeline.ui")._state
 assert(#ui_state.commits == 2, "Timeline snapshots were not grouped into the two real Git commits")

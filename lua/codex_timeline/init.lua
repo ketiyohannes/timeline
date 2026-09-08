@@ -5,7 +5,7 @@ local highlights = require("codex_timeline.highlights")
 local M = {}
 local namespace = vim.api.nvim_create_namespace("codex_timeline")
 local config = {
-  annotate_on_buf_enter = true,
+  annotate_on_buf_enter = false,
   auto_sync = true,
   virtual_text = false,
   session = nil,
@@ -196,7 +196,7 @@ function M.select_session()
   end
   ui.select_session(function(ref)
     selected_refs[root] = ref
-    M.annotate()
+    if config.annotate_on_buf_enter then M.annotate() end
     ui.open({
       ref = ref,
       live_refresh = config.live_refresh,
@@ -226,7 +226,7 @@ function M.sync()
     return
   end
   sync_root(root, true, function(ok)
-    if ok then M.annotate() end
+    if ok and config.annotate_on_buf_enter then M.annotate() end
   end)
 end
 
@@ -259,6 +259,12 @@ end
 function M.setup(opts)
   config = vim.tbl_deep_extend("force", config, opts or {})
   highlights.apply(config.colors)
+
+  if not config.annotate_on_buf_enter then
+    for _, buffer in ipairs(vim.api.nvim_list_bufs()) do
+      if vim.api.nvim_buf_is_valid(buffer) then M.clear(buffer) end
+    end
+  end
 
   local group = vim.api.nvim_create_augroup("Timeline", { clear = true })
   vim.api.nvim_create_autocmd("ColorScheme", {
