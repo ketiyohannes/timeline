@@ -162,7 +162,7 @@ Keys:
 | `Enter` (panes) | Move from Commits to Codebase, then to Code |
 | `1` / `2` / `3` | Focus a pane directly |
 | `[c` / `]c` | Select the previous or next Git commit |
-| `[t` / `]t` | Select the previous or next recorded Codex change inside that commit |
+| `[t` / `]t` | Select the previous or next recorded Codex change inside that commit, wrapping at either end |
 | `/` | Toggle real-time commit search |
 | `n` / `N` | Jump to the next or previous search match |
 | `F` | Toggle real-time file search for the selected commit |

@@ -77,6 +77,11 @@ assert(not codebase_text:find("01turn%-"), "codebase pane leaked raw Codex turn 
 -- Commit search accepts both change numbers and message fragments, highlights
 -- every result, and wraps in both directions.
 local ui = require("codex_timeline.ui")
+assert(ui_state.event.commit_sequence == 2, "browser did not start at the newest in-commit change")
+ui.move_change(1)
+assert(ui_state.event.commit_sequence == 1, "]t did not wrap from the newest change to the first")
+ui.move_change(-1)
+assert(ui_state.event.commit_sequence == 2, "[t did not wrap from the first change to the newest")
 local function window_title(window)
   local title = vim.api.nvim_win_get_config(window).title
   if type(title) == "table" then

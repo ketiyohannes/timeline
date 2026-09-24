@@ -1033,7 +1033,7 @@ function M.move_change(direction)
   if #events < 2 then return end
   local index = #events
   for candidate, event in ipairs(events) do if same_event(event, state.event) then index = candidate break end end
-  index = math.max(1, math.min(#events, index + direction))
+  index = ((index - 1 + direction) % #events) + 1
   state.event = events[index]
   state.snapshot_cache = {}
   state.order_cache = {}
