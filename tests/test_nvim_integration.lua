@@ -32,6 +32,22 @@ assert(#ui_state.commits[2].events == 2, "Codex changes were not nested inside t
 assert(ui_state.commits[2].events[1].commit_turn_number == 1, "first in-commit turn was not numbered first")
 assert(ui_state.commits[2].events[2].commit_turn_number == 2, "second in-commit turn was not numbered second")
 
+-- Snapshots remain ordered and navigable even when the hook could not obtain
+-- a Codex turn id. Turn metadata enriches ordering; it must not gate it.
+local events_without_turn_ids = vim.deepcopy(ui_state.events)
+for _, event in ipairs(events_without_turn_ids) do
+  event.turn = nil
+  event.turn_number = nil
+  event.commit_sequence = nil
+  event.commit_turn_number = nil
+end
+local commits_without_turn_ids = assert(require("codex_timeline.git").commits(test_repo, events_without_turn_ids))
+assert(
+  commits_without_turn_ids[2].events[1].commit_sequence == 1
+    and commits_without_turn_ids[2].events[2].commit_sequence == 2,
+  "recorded changes without Codex turn ids lost their in-commit ordering"
+)
+
 -- All three floating panes must respond to editor resizing and remain within
 -- the available columns.
 vim.o.columns = 180

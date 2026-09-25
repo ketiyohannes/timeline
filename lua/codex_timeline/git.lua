@@ -163,14 +163,20 @@ function M.commits(root, events)
   local function number_codex_changes(grouped)
     local commit_turns, turn_count, change_count = {}, 0, 0
     for _, event in ipairs(grouped) do
-      if event.turn then
+      -- A missing Codex turn id must not make a recorded Timeline snapshot
+      -- disappear. Hooks can legitimately run without CODEX_TURN_ID, but the
+      -- snapshot still has a stable chronological position inside the Git
+      -- commit. The sync baseline is context rather than a user change.
+      if event.synthetic and event.subject ~= "existing project baseline" then
         change_count = change_count + 1
         event.commit_sequence = change_count
-        if not commit_turns[event.turn] then
-          turn_count = turn_count + 1
-          commit_turns[event.turn] = turn_count
+        if event.turn then
+          if not commit_turns[event.turn] then
+            turn_count = turn_count + 1
+            commit_turns[event.turn] = turn_count
+          end
+          event.commit_turn_number = commit_turns[event.turn]
         end
-        event.commit_turn_number = commit_turns[event.turn]
       end
     end
   end

@@ -150,7 +150,7 @@ Inside a recorded commit, Codebase prefixes every touched file with the ordered 
 02    │ src/service.ts
 ```
 
-`README.md` was first touched by Change 1 and touched again by Change 3. `src/service.ts` was first touched by Change 2. Files unchanged by Codex have no prefix. If one Codex tool call changes several files, those files share the same change number because Timeline records that tool call as one atomic change rather than inventing an order Git cannot prove.
+`README.md` was first touched by Change 1 and touched again by Change 3. `src/service.ts` was first touched by Change 2. Files unchanged by Timeline-recorded work have no prefix. If one Codex tool call changes several files, those files share the same change number because Timeline records that tool call as one atomic change rather than inventing an order Git cannot prove. Recorded snapshots remain ordered even if Codex did not provide a turn ID; the turn ID adds context but is not required for navigation.
 
 Code uses the same numbering. Every surviving changed line remains highlighted and carries a right-aligned marker such as `Δ01` or `Δ03`, so earlier and later diffs stay visible together in the complete historical file. Every touched file remains highlighted in Codebase as well. The actively selected change uses stronger styling: event-local additions and removals keep their bold green/red `+` and `-` signs and backgrounds. A removed line is labeled with the change that removed it; a surviving line retains the change that last introduced or modified it.
 
@@ -162,7 +162,7 @@ Keys:
 | `Enter` (panes) | Move from Commits to Codebase, then to Code |
 | `1` / `2` / `3` | Focus a pane directly |
 | `[c` / `]c` | Select the previous or next Git commit |
-| `[t` / `]t` | Select the previous or next recorded Codex change inside that commit, wrapping at either end |
+| `[t` / `]t` | Select the previous or next recorded Timeline change inside that commit, wrapping at either end |
 | `/` | Toggle real-time commit search |
 | `n` / `N` | Jump to the next or previous search match |
 | `F` | Toggle real-time file search for the selected commit |

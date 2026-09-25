@@ -1028,9 +1028,15 @@ end
 function M.move_change(direction)
   local events = {}
   for _, event in ipairs((state.commit and state.commit.events) or {}) do
-    if event.commit_turn_number then events[#events + 1] = event end
+    if event.commit_sequence then events[#events + 1] = event end
   end
-  if #events < 2 then return end
+  if #events < 2 then
+    local message = #events == 1
+      and "Timeline: this commit contains one recorded change"
+      or "Timeline: this Git commit has no recorded in-commit changes"
+    vim.notify(message, vim.log.levels.INFO)
+    return false
+  end
   local index = #events
   for candidate, event in ipairs(events) do if same_event(event, state.event) then index = candidate break end end
   index = ((index - 1 + direction) % #events) + 1
@@ -1046,6 +1052,7 @@ function M.move_change(direction)
   local selected_path
   for _, path in ipairs(files) do if changes[path] then selected_path = path break end end
   apply_file_filter("", selected_path)
+  return true
 end
 
 local function map_all(lhs, callback, description)
