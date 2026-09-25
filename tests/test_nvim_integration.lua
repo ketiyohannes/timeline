@@ -95,9 +95,9 @@ assert(not codebase_text:find("01turn%-"), "codebase pane leaked raw Codex turn 
 local ui = require("codex_timeline.ui")
 assert(ui_state.event.commit_sequence == 2, "browser did not start at the newest in-commit change")
 ui.move_change(1)
-assert(ui_state.event.commit_sequence == 1, "]t did not wrap from the newest change to the first")
+assert(ui_state.event.commit_sequence == 1, "]e did not wrap from the newest snapshot to the first")
 ui.move_change(-1)
-assert(ui_state.event.commit_sequence == 2, "[t did not wrap from the first change to the newest")
+assert(ui_state.event.commit_sequence == 2, "[e did not wrap from the first snapshot to the newest")
 local function window_title(window)
   local title = vim.api.nvim_win_get_config(window).title
   if type(title) == "table" then
@@ -210,6 +210,27 @@ assert(selected_row and selected_row.path == ui_state.visible_files[5], "previou
 ui.search_files("")
 assert(ui_state.file_search.query == "" and #ui_state.file_search.matches == 0, "empty file search did not clear")
 assert(#vim.api.nvim_buf_get_extmarks(roles.files, file_search_namespace, 0, -1, {}) == 0, "file search highlights remain")
+
+-- [t and ]t surf only files touched in the selected commit, skip unchanged
+-- paths, update the Code pane, and wrap in both directions.
+local added_row
+for row, item in ipairs(ui_state.file_rows) do
+  if item.kind == "file" and item.path == "added.txt" then added_row = row break end
+end
+assert(added_row, "changed-file navigation fixture is missing added.txt")
+vim.api.nvim_win_set_cursor(ui_state.windows.files, { added_row, 0 })
+vim.cmd.doautocmd("CursorMoved")
+assert(ui.move_changed_file(-1), "previous changed-file navigation did not move")
+local changed_row = ui_state.file_rows[vim.api.nvim_win_get_cursor(ui_state.windows.files)[1]]
+assert(changed_row.path == "unchanged.txt", "previous changed file did not wrap to the final touched path")
+assert(vim.b[roles.source].codex_timeline_path == "unchanged.txt", "Code pane did not follow changed-file navigation")
+assert(ui.move_changed_file(1), "next changed-file navigation did not move")
+changed_row = ui_state.file_rows[vim.api.nvim_win_get_cursor(ui_state.windows.files)[1]]
+assert(changed_row.path == "added.txt", "next changed file did not wrap to the first touched path")
+assert(ui.move_changed_file(1), "next changed-file navigation did not advance")
+changed_row = ui_state.file_rows[vim.api.nvim_win_get_cursor(ui_state.windows.files)[1]]
+assert(changed_row.path == "deep.txt", "changed-file navigation included an untouched path or used the wrong order")
+assert(vim.b[roles.source].codex_timeline_path == "deep.txt", "Code pane did not open the next changed file")
 
 local file_text = table.concat(vim.api.nvim_buf_get_lines(roles.files, 0, -1, false), "\n")
 assert(file_text:find("01,02 │ example.txt", 1, true), "file does not show every in-commit change that touched it")

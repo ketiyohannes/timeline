@@ -766,6 +766,41 @@ function M.next_file_match(direction)
   render_source()
 end
 
+function M.move_changed_file(direction)
+  if not valid_window(state.windows.files) then return false end
+  local changed = {}
+  for _, path in ipairs(state.visible_files) do
+    if state.file_orders[path] or state.changes[path] then
+      changed[#changed + 1] = path
+    end
+  end
+  if #changed == 0 then
+    vim.notify("Timeline: this commit has no changed files", vim.log.levels.INFO)
+    return false
+  end
+
+  local current = current_file()
+  local index
+  for candidate, path in ipairs(changed) do
+    if path == current then index = candidate break end
+  end
+  if index then
+    index = ((index - 1 + (direction or 1)) % #changed) + 1
+  else
+    index = (direction or 1) < 0 and #changed or 1
+  end
+
+  local target = changed[index]
+  for row, item in ipairs(state.file_rows) do
+    if item.kind == "file" and item.path == target then
+      vim.api.nvim_win_set_cursor(state.windows.files, { row, 0 })
+      render_source()
+      return true
+    end
+  end
+  return false
+end
+
 local function sync_file_search_to_cursor()
   if state.file_search.query == "" or not valid_window(state.windows.files) then
     return
@@ -1344,8 +1379,10 @@ function M.open(opts)
   map_all("<Esc>", close, "Close Timeline")
   map_all("[c", function() move_event(-1) end, "Previous commit")
   map_all("]c", function() move_event(1) end, "Next commit")
-  map_all("[t", function() M.move_change(-1) end, "Previous Codex change in commit")
-  map_all("]t", function() M.move_change(1) end, "Next Codex change in commit")
+  map_all("[t", function() M.move_changed_file(-1) end, "Previous changed file in commit")
+  map_all("]t", function() M.move_changed_file(1) end, "Next changed file in commit")
+  map_all("[e", function() M.move_change(-1) end, "Previous recorded snapshot in commit")
+  map_all("]e", function() M.move_change(1) end, "Next recorded snapshot in commit")
   map_all("/", function() M.search() end, "Search commits")
   map_all("n", function() M.next_match(1) end, "Next commit search match")
   map_all("N", function() M.next_match(-1) end, "Previous commit search match")

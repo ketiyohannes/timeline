@@ -20,8 +20,8 @@ COMMANDS                                                  *timeline-commands*
     See |timeline-code-header|.
 
     Press <CR> to move right, 1/2/3 to focus a pane, [c and ]c to traverse
-    commits, [t and ]t to traverse Codex changes inside the commit with
-    wraparound, r for a manual full reopen, and q or <Esc> to close. New recorded
+    commits, [t and ]t to surf changed files, [e and ]e to reconstruct recorded
+    snapshots, r for a manual full reopen, and q or <Esc> to close. New recorded
     snapshots appear automatically while the browser is open. If the newest
     event was selected, Timeline follows the new event; an older selection is
     preserved. Press / from any pane to
@@ -61,10 +61,13 @@ COMMANDS                                                  *timeline-commands*
 
 ]t / [t
     Outside the Timeline browser, jump to the next or previous annotated line.
-    Inside the browser these keys select the next or previous recorded Timeline
-    change within the active Git commit. Recorded snapshots remain navigable
-    when Codex turn metadata is unavailable. A commit with fewer than two
-    recorded changes reports why there is nowhere to move.
+    Inside the browser these keys open the next or previous changed file within
+    the active Git commit and wrap at either end.
+
+]e / [e
+    Inside the Timeline browser, reconstruct the next or previous recorded
+    snapshot within the active Git commit. Recorded snapshots remain navigable
+    when Codex turn metadata is unavailable.
 
 ==============================================================================
 CODE PANE HEADER                                      *timeline-code-header*
@@ -109,7 +112,7 @@ result or N for the previous result from any pane. Navigation wraps.
 
 Opening a result selects its final recorded state. Codebase contains every file
 that existed then, with ordering attached directly to touched paths. Use [t and
-]t to reconstruct intermediate states inside the commit.
+]t to surf touched files, or [e and ]e to reconstruct intermediate states.
 
 Delete all search text to restore every commit. When no commit matches, Commits
 contains no rows, the current snapshot remains open, and its title displays
@@ -156,8 +159,9 @@ For a commit with Codex metadata, Codebase attaches ordering directly to paths:
     01,02 | src/app.ts
     02    | src/store.ts
 <
-Use [t and ]t to rebuild the complete historical codebase at the previous or
-next recorded change; navigation wraps at both ends. For imported or otherwise Git-only commits, Codebase
+Use [t and ]t to surf the changed files. Use [e and ]e to rebuild the complete
+historical codebase at the previous or next recorded snapshot; both navigation
+modes wrap at either end. For imported or otherwise Git-only commits, Codebase
 contains plain paths because Git cannot recover edit order inside an old commit.
 
 The numbers before a path are every recorded change that touched it up to the

@@ -162,7 +162,8 @@ Keys:
 | `Enter` (panes) | Move from Commits to Codebase, then to Code |
 | `1` / `2` / `3` | Focus a pane directly |
 | `[c` / `]c` | Select the previous or next Git commit |
-| `[t` / `]t` | Select the previous or next recorded Timeline change inside that commit, wrapping at either end |
+| `[t` / `]t` | Open the previous or next changed file in the selected commit, wrapping at either end |
+| `[e` / `]e` | Reconstruct the previous or next recorded snapshot inside that commit |
 | `/` | Toggle real-time commit search |
 | `n` / `N` | Jump to the next or previous search match |
 | `F` | Toggle real-time file search for the selected commit |
@@ -215,7 +216,7 @@ Examples:
 
 The selected commit is retained while it still matches. Otherwise, the first later match is opened, wrapping to the first result when needed. Press `Enter` or `Esc` to hide the bar while keeping its filter active. Then use `n` or `N` from any pane to move forward or backward through the filtered results; navigation wraps at either end. Pressing `/` again also toggles the bar.
 
-Selecting a search result opens its final recorded state. Codebase shows the complete file tree with change numbers attached to touched paths. Use `[t` and `]t` to reconstruct earlier or later recorded changes inside the commit.
+Selecting a search result opens its final recorded state. Codebase shows the complete file tree with change numbers attached to touched paths. Use `[t` and `]t` to surf the changed files, or `[e` and `]e` to reconstruct earlier or later recorded snapshots inside the commit.
 
 Delete all text in the bar to restore every commit. A query with no results removes every row from Commits, leaves the current snapshot open in the other panes, and shows `no matches` in the title. Use `F` to search paths in the selected snapshot; raw Codex UUIDs, contents, timestamps, and hashes are not searched.
 
